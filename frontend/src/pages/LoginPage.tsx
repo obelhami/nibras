@@ -176,6 +176,8 @@ export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,7 +233,7 @@ export default function LoginPage() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
                 </svg>
               </FeatureIcon>
               <div>
@@ -257,7 +259,8 @@ export default function LoginPage() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
                 </svg>
               </FeatureIcon>
               <div>
@@ -283,10 +286,8 @@ export default function LoginPage() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                 </svg>
               </FeatureIcon>
               <div>
@@ -323,107 +324,234 @@ export default function LoginPage() {
           <div className="mb-7 flex justify-center gap-8 border-b border-gray-200">
             <button
               onClick={() => setActiveTab("login")}
-              className={`pb-3 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 pb-3 text-sm font-medium transition-colors ${
                 activeTab === "login"
                   ? "border-b-2 border-blue-600 text-blue-600"
                   : "text-gray-400 hover:text-gray-600"
               }`}
             >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
               Connexion
             </button>
             <button
               onClick={() => setActiveTab("register")}
-              className={`pb-3 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 pb-3 text-sm font-medium transition-colors ${
                 activeTab === "register"
                   ? "border-b-2 border-blue-600 text-blue-600"
                   : "text-gray-400 hover:text-gray-600"
               }`}
             >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="8.5" cy="7" r="4" />
+                <line x1="20" y1="8" x2="20" y2="14" />
+                <line x1="23" y1="11" x2="17" y2="11" />
+              </svg>
               Inscription
             </button>
           </div>
 
-          {/* Welcome */}
-          <h2 className="mb-1.5 text-xl font-bold text-gray-900">
-            Bienvenue de retour !
-          </h2>
-          <p className="mb-6 text-[13px] text-gray-500">
-            Connectez-vous pour retrouver vos projets et vos insights.
-          </p>
+          {activeTab === "login" ? (
+            <>
+              <h2 className="mb-1.5 text-xl font-bold text-gray-900">
+                Bienvenue de retour !
+              </h2>
+              <p className="mb-6 text-[13px] text-gray-500">
+                Connectez-vous pour retrouver vos projets et vos insights.
+              </p>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-1.5 block text-[13px] font-medium text-gray-700"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="votreemail@exemple.com"
-                className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-            </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="mb-1.5 block text-[13px] font-medium text-gray-700"
+                  >
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="votreemail@exemple.com"
+                    className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
 
-            {/* Password */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <label
-                  htmlFor="password"
-                  className="text-[13px] font-medium text-gray-700"
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label
+                      htmlFor="password"
+                      className="text-[13px] font-medium text-gray-700"
+                    >
+                      Mot de passe
+                    </label>
+                    <a
+                      href="#"
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      Mot de passe oubli&eacute; ?
+                    </a>
+                  </div>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
                 >
-                  Mot de passe
-                </label>
-                <a
-                  href="#"
-                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                >
-                  Mot de passe oubli&eacute; ?
-                </a>
+                  Se connecter
+                </button>
+              </form>
+
+              <div className="my-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-xs text-gray-400">ou</span>
+                <div className="h-px flex-1 bg-gray-200" />
               </div>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-            </div>
 
-            {/* Submit */}
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
-            >
-              Se connecter
-            </button>
-          </form>
+              <button className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+                <GoogleIcon />
+                Continuer avec Google
+              </button>
 
-          {/* Divider */}
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-gray-200" />
-            <span className="text-xs text-gray-400">ou</span>
-            <div className="h-px flex-1 bg-gray-200" />
-          </div>
+              <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-gray-400">
+                <LockIcon />
+                <span>S&eacute;curit&eacute; &amp; confidentialit&eacute;</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="mb-1.5 text-xl font-bold text-gray-900">
+                Cr&eacute;er un compte
+              </h2>
+              <p className="mb-6 text-[13px] text-gray-500">
+                Inscrivez-vous pour commencer &agrave; utiliser Nibras.
+              </p>
 
-          {/* Google */}
-          <button className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
-            <GoogleIcon />
-            Continuer avec Google
-          </button>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="username"
+                    className="mb-1.5 block text-[13px] font-medium text-gray-700"
+                  >
+                    Nom d&rsquo;utilisateur
+                  </label>
+                  <input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="votrenom"
+                    className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
 
-          {/* Security */}
-          <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-gray-400">
-            <LockIcon />
-            <span>S&eacute;curit&eacute; &amp; confidentialit&eacute;</span>
-          </div>
+                <div>
+                  <label
+                    htmlFor="reg-email"
+                    className="mb-1.5 block text-[13px] font-medium text-gray-700"
+                  >
+                    Email
+                  </label>
+                  <input
+                    id="reg-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="votreemail@exemple.com"
+                    className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="reg-password"
+                    className="mb-1.5 block text-[13px] font-medium text-gray-700"
+                  >
+                    Mot de passe
+                  </label>
+                  <input
+                    id="reg-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="confirm-password"
+                    className="mb-1.5 block text-[13px] font-medium text-gray-700"
+                  >
+                    Confirmer le mot de passe
+                  </label>
+                  <input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
+                >
+                  S&rsquo;inscrire
+                </button>
+              </form>
+
+              <div className="my-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-xs text-gray-400">ou</span>
+                <div className="h-px flex-1 bg-gray-200" />
+              </div>
+
+              <button className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+                <GoogleIcon />
+                Continuer avec Google
+              </button>
+
+              <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-gray-400">
+                <LockIcon />
+                <span>S&eacute;curit&eacute; &amp; confidentialit&eacute;</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer — below the card */}

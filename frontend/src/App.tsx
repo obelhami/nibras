@@ -1,21 +1,7 @@
-import { useEffect, useState } from 'react'
+import LoginPage from './pages/LoginPage'
 
 function App() {
-    const [message, setMessage] = useState('Loading...')
-
-    useEffect(() => {
-        fetch('http://localhost:3000/api/hello')
-            .then(res => res.json())
-            .then(data => {
-                setMessage(data.message)
-            })
-    }, [])
-
-    return (
-        <div>
-            <h1>{message}</h1>
-        </div>
-    )
+  return <LoginPage />
 }
 
 export default App

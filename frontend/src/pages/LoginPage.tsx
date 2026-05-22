@@ -199,21 +199,21 @@ export default function LoginPage() {
         <div>
           {/* Logo + version */}
           <div className="mb-10 flex items-center gap-2">
-            <img src={nibrasLogo} alt="Nibras" className="h-9" />
+            <img src={nibrasLogo} alt="Nibras" className="h-14" />
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-600">
               V1.1
             </span>
           </div>
 
           {/* Heading */}
-          <h1 className="mb-4 text-[28px] leading-tight font-bold tracking-tight text-gray-900">
+          <h1 className="mb-4 text-[36px] leading-tight font-bold tracking-tight text-gray-900">
             Votre copilote IA pour
             <br />
             <span className="text-blue-600">une delivery intelligente</span>
           </h1>
 
           {/* Description */}
-          <p className="mb-8 max-w-md text-[13px] leading-relaxed text-gray-500">
+          <p className="mb-8 max-w-md text-[15px] leading-relaxed text-gray-500">
             Nibras analyse vos donn&eacute;es, anticipe les risques et vous aide
             &agrave; livrer vos projets plus vite, avec moins de blocages et
             plus d&rsquo;impact.
@@ -237,7 +237,7 @@ export default function LoginPage() {
                 </svg>
               </FeatureIcon>
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-base font-semibold text-gray-800">
                   Insights IA en temps r&eacute;el
                 </p>
                 <p className="text-xs leading-relaxed text-gray-500">
@@ -264,7 +264,7 @@ export default function LoginPage() {
                 </svg>
               </FeatureIcon>
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-base font-semibold text-gray-800">
                   Moins de risques, plus de visibilit&eacute;
                 </p>
                 <p className="text-xs leading-relaxed text-gray-500">
@@ -291,7 +291,7 @@ export default function LoginPage() {
                 </svg>
               </FeatureIcon>
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-base font-semibold text-gray-800">
                   Collaboration ax&eacute;e sur la valeur
                 </p>
                 <p className="text-xs leading-relaxed text-gray-500">
@@ -375,10 +375,10 @@ export default function LoginPage() {
 
           {activeTab === "login" ? (
             <>
-              <h2 className="mb-1.5 text-xl font-bold text-gray-900">
+              <h2 className="mb-1.5 text-2xl font-bold text-gray-900">
                 Bienvenue de retour !
               </h2>
-              <p className="mb-6 text-[13px] text-gray-500">
+              <p className="mb-6 text-sm text-gray-500">
                 Connectez-vous pour retrouver vos projets et vos insights.
               </p>
 
@@ -451,10 +451,10 @@ export default function LoginPage() {
             </>
           ) : (
             <>
-              <h2 className="mb-1.5 text-xl font-bold text-gray-900">
+              <h2 className="mb-1.5 text-2xl font-bold text-gray-900">
                 Cr&eacute;er un compte
               </h2>
-              <p className="mb-6 text-[13px] text-gray-500">
+              <p className="mb-6 text-sm text-gray-500">
                 Inscrivez-vous pour commencer &agrave; utiliser Nibras.
               </p>
 

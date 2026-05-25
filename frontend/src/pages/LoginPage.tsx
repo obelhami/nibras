@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import nibrasLogo from "../assets/nibras-logo.png";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -175,14 +176,61 @@ function FeatureIcon({ children }: { children: React.ReactNode }) {
 }
 
 export default function LoginPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      fetch(`${API_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => {
+          if (res.ok) navigate("/dashboard", { replace: true });
+        })
+        .catch(() => {});
+    }
+  }, [navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const endpoint = activeTab === "login" ? "/login" : "/register";
+      const body =
+        activeTab === "login"
+          ? { email, password }
+          : { username, email, password, confirmPassword };
+
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message ?? "Request failed");
+      }
+
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+        navigate("/dashboard", { replace: true });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -325,7 +373,7 @@ export default function LoginPage() {
           {/* Tabs */}
           <div className="mb-7 flex justify-center gap-8 border-b border-gray-200">
             <button
-              onClick={() => setActiveTab("login")}
+              onClick={() => { setActiveTab("login"); setError(""); }}
               className={`flex items-center gap-1.5 pb-3 text-sm font-medium transition-colors ${
                 activeTab === "login"
                   ? "border-b-2 border-blue-600 text-blue-600"
@@ -349,7 +397,7 @@ export default function LoginPage() {
               Connexion
             </button>
             <button
-              onClick={() => setActiveTab("register")}
+              onClick={() => { setActiveTab("register"); setError(""); }}
               className={`flex items-center gap-1.5 pb-3 text-sm font-medium transition-colors ${
                 activeTab === "register"
                   ? "border-b-2 border-blue-600 text-blue-600"
@@ -427,11 +475,16 @@ export default function LoginPage() {
                   />
                 </div>
 
+                {error && activeTab === "login" && (
+                  <p className="text-sm text-red-500">{error}</p>
+                )}
+
                 <button
                   type="submit"
-                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
+                  disabled={loading}
+                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:opacity-50"
                 >
-                  Se connecter
+                  {loading ? "Connexion..." : "Se connecter"}
                 </button>
               </form>
 
@@ -532,11 +585,16 @@ export default function LoginPage() {
                   />
                 </div>
 
+                {error && activeTab === "register" && (
+                  <p className="text-sm text-red-500">{error}</p>
+                )}
+
                 <button
                   type="submit"
-                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
+                  disabled={loading}
+                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:opacity-50"
                 >
-                  S&rsquo;inscrire
+                  {loading ? "Inscription..." : "S’inscrire"}
                 </button>
               </form>
 

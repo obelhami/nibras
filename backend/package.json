@@ -18,5 +18,9 @@
     "dotenv": "^17.4.2",
     "elysia": "^1.4.28",
     "jsonwebtoken": "^9.0.3"
+  },
+  "scripts": {
+    "dev": "bun --watch index.ts"
+
   }
 }

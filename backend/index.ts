@@ -52,13 +52,18 @@ const verifyAuthToken = (authorizationHeader: string | undefined) => {
 };
 
 const app = new Elysia()
-  .use(cors({ origin: FRONTEND_URL, credentials: true }))
+  .use(cors({
+    origin: true,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+  }))
   .use(jwt({ name: 'jwt', secret: 'nibras-dev-secret' }))
   .get('/', () => 'Hello World')
   .get('/api/hello', () => ({ message: 'Hello from Elysia Backend' }))
 
   // Google OAuth
-  .get('/auth/google', () => {
+  .get('/auth/google', ({ set }) => {
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
     const url = google.createAuthorizationURL(state, codeVerifier, [
@@ -70,7 +75,8 @@ const app = new Elysia()
     stateStore.set(state, codeVerifier);
     setTimeout(() => stateStore.delete(state), 10 * 60 * 1000);
 
-    return Response.redirect(url.toString(), 302);
+    set.status = 302;
+    set.headers['location'] = url.toString();
   })
 
   .get('/auth/google/callback', async ({ query, set, jwt }) => {
@@ -105,10 +111,12 @@ const app = new Elysia()
         picture: googleUser.picture,
       });
 
-      return Response.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`, 302);
+      set.status = 302;
+      set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${token}`;
     } catch (err) {
       console.error('Google OAuth error:', err);
-      return Response.redirect(`${FRONTEND_URL}/?error=auth_failed`, 302);
+      set.status = 302;
+      set.headers['location'] = `${FRONTEND_URL}/?error=auth_failed`;
     }
   })
 
@@ -119,18 +127,30 @@ const app = new Elysia()
       return { error: 'Unauthorized' };
     }
 
-    const payload = await jwt.verify(auth.slice(7));
-    if (!payload) {
-      set.status = 401;
-      return { error: 'Invalid token' };
+    const token = auth.slice(7);
+
+    const googlePayload = await jwt.verify(token);
+    if (googlePayload) {
+      return {
+        id: googlePayload.sub,
+        email: googlePayload.email,
+        name: googlePayload.name,
+        picture: googlePayload.picture,
+      };
     }
 
-    return {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      picture: payload.picture,
-    };
+    const localPayload = verifyAuthToken(auth);
+    if (localPayload) {
+      return {
+        id: localPayload.email,
+        email: localPayload.email,
+        name: localPayload.username,
+        picture: null,
+      };
+    }
+
+    set.status = 401;
+    return { error: 'Invalid token' };
   })
 
   // Register/Login routes

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import nibrasLogo from "../assets/nibras-logo.png";
 
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+
 function RobotIllustration() {
   return (
     <svg
@@ -439,7 +441,10 @@ export default function LoginPage() {
                 <div className="h-px flex-1 bg-gray-200" />
               </div>
 
-              <button className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+              <button
+                onClick={() => { window.location.href = `${API_URL}/auth/google`; }}
+                className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
                 <GoogleIcon />
                 Continuer avec Google
               </button>
@@ -541,7 +546,10 @@ export default function LoginPage() {
                 <div className="h-px flex-1 bg-gray-200" />
               </div>
 
-              <button className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+              <button
+                onClick={() => { window.location.href = `${API_URL}/auth/google`; }}
+                className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:cursor-pointer"
+              >
                 <GoogleIcon />
                 Continuer avec Google
               </button>

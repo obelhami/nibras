@@ -5,6 +5,8 @@ import { Google, generateState, generateCodeVerifier } from 'arctic';
 import { db } from './db';
 import bcrypt from 'bcryptjs';
 import jsonwebtoken from 'jsonwebtoken';
+import { swagger } from "@elysiajs/swagger";
+import { t } from 'elysia';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -20,16 +22,20 @@ const google = new Google(
 
 const stateStore = new Map<string, string>();
 
-const createAuthToken = (user: { username: string; email: string }) =>
+// Access token - lives 15 minutes
+const createAccessToken = (user: { username: string; email: string }) =>
     jsonwebtoken.sign(
-        {
-            email: user.email,
-            username: user.username
-        },
+        { email: user.email, username: user.username },
         jwtSecret,
-        {
-            expiresIn: '1h'
-        }
+        { expiresIn: '15m' }
+    );
+
+// Refresh token - lives 7 days
+const createRefreshToken = (user: { email: string }) =>
+    jsonwebtoken.sign(
+        { email: user.email },
+        jwtSecret,
+        { expiresIn: '7d' }
     );
 
 const verifyAuthToken = (authorizationHeader: string | undefined) => {
@@ -52,13 +58,14 @@ const verifyAuthToken = (authorizationHeader: string | undefined) => {
 };
 
 const app = new Elysia()
+  .use(swagger({path: '/docs'}))
   .use(cors({
     origin: true,
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'OPTIONS'],
   }))
-  .use(jwt({ name: 'jwt', secret: 'nibras-dev-secret' }))
+  .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET ?? 'dev-secret' }))
   .get('/', () => 'Hello World')
   .get('/api/hello', () => ({ message: 'Hello from Elysia Backend' }))
 
@@ -153,7 +160,6 @@ const app = new Elysia()
     return { error: 'Invalid token' };
   })
 
-  // Register/Login routes
   .get('/profile', ({ headers, set }) => {
     const payload = verifyAuthToken(headers.authorization);
 
@@ -172,22 +178,7 @@ const app = new Elysia()
   })
 
   .post('/register', async ({ body, set }) => {
-    const {
-        username,
-        email,
-        password,
-        confirmPassword
-    } = body as {
-        username: string;
-        email: string;
-        password: string;
-        confirmPassword: string;
-    };
-
-    if (!username || !email || !password || !confirmPassword) {
-        set.status = 400;
-        return { message: 'All fields are required' };
-    }
+    const { username, email, password, confirmPassword } = body;
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -217,20 +208,34 @@ const app = new Elysia()
         args: [username, email, hashedPassword]
     });
 
-    const token = createAuthToken({ username, email });
+    const accessToken = createAccessToken({ username, email });
+    const refreshToken = createRefreshToken({ email });
+
+    // save refresh token in database
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    await db.execute({
+        sql: "INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)",
+        args: [refreshToken, email, expiresAt.toISOString()]
+    });
 
     return {
         message: 'Registration successful',
         user: { username, email },
-        token
+        accessToken,
+        refreshToken
     };
+  }, {
+    body: t.Object({
+        username: t.String(),
+        email: t.String({ format: 'email' }),
+        password: t.String({ minLength: 6 }),
+        confirmPassword: t.String()
+    })
   })
 
   .post('/login', async ({ body, set }) => {
-    const { email, password } = body as {
-        email: string;
-        password: string;
-    };
+    const { email, password } = body;
 
     const result = await db.execute({
         sql: "SELECT * FROM users WHERE email = ?",
@@ -255,18 +260,120 @@ const app = new Elysia()
         return { message: 'Wrong password' };
     }
 
-    const token = createAuthToken(user);
+    const accessToken = createAccessToken(user);
+    const refreshToken = createRefreshToken(user);
+
+    // save refresh token in database
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    await db.execute({
+        sql: "INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)",
+        args: [refreshToken, user.email, expiresAt.toISOString()]
+    });
 
     return {
         message: 'Login successful',
-        user: {
-            username: user.username,
-            email: user.email
-        },
-        token
+        user: { username: user.username, email: user.email },
+        accessToken,   // send to frontend, use for every request, lives 15min
+        refreshToken   // send to frontend, use only to get new accessToken, lives 7days
     };
+  }, {
+    body: t.Object({
+        email: t.String({ format: 'email' }),
+        password: t.String()
+    })
+  })
+
+  // ✅ new route - get new accessToken using refreshToken
+  .post('/auth/refresh', async ({ body, set }) => {
+    const { refreshToken } = body;
+
+    // check if token exists in database
+    const result = await db.execute({
+        sql: "SELECT * FROM refresh_tokens WHERE token = ?",
+        args: [refreshToken]
+    });
+
+    const storedToken = result.rows[0] as {
+        token: string;
+        email: string;
+        expires_at: string;
+    } | undefined;
+
+    // not found → user already logged out or token is fake
+    if (!storedToken) {
+        set.status = 401;
+        return { message: 'Invalid refresh token' };
+    }
+
+    // check if expired
+    if (new Date(storedToken.expires_at) < new Date()) {
+        await db.execute({
+            sql: "DELETE FROM refresh_tokens WHERE token = ?",
+            args: [refreshToken]
+        });
+        set.status = 401;
+        return { message: 'Refresh token expired, please login again' };
+    }
+
+    // verify the token signature
+    try {
+        const payload = jsonwebtoken.verify(refreshToken, jwtSecret) as {
+            email: string;
+        };
+
+        // get user from database
+        const userResult = await db.execute({
+            sql: "SELECT * FROM users WHERE email = ?",
+            args: [payload.email]
+        });
+
+        const user = userResult.rows[0] as {
+            username: string;
+            email: string;
+        } | undefined;
+
+        if (!user) {
+            set.status = 401;
+            return { message: 'User not found' };
+        }
+
+        // create new access token
+        const newAccessToken = createAccessToken(user);
+
+        return {
+            message: 'Token refreshed successfully',
+            accessToken: newAccessToken
+        };
+
+    } catch {
+        set.status = 401;
+        return { message: 'Invalid refresh token' };
+    }
+  }, {
+    body: t.Object({
+        refreshToken: t.String()
+    })
+  })
+
+  // ✅ new route - logout
+  .post('/logout', async ({ body, set }) => {
+    const { refreshToken } = body;
+
+    // delete from database so it can never be used again
+    await db.execute({
+        sql: "DELETE FROM refresh_tokens WHERE token = ?",
+        args: [refreshToken]
+    });
+
+    return { message: 'Logged out successfully' };
+  }, {
+    body: t.Object({
+        refreshToken: t.String()
+    })
   })
 
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');
+console.log(app.routes);

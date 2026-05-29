@@ -14,3 +14,13 @@ await db.execute(`
         password TEXT NOT NULL
     )
 `)
+
+await db.execute(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT NOT NULL,
+        email TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+`); 

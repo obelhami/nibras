@@ -222,8 +222,10 @@ export default function LoginPage() {
         throw new Error(data.message ?? "Request failed");
       }
 
-      if (data.token) {
-        localStorage.setItem("token", data.token);
+      // backend may return the token under different keys (accessToken, token, access_token)
+      const tokenValue = data.token ?? data.accessToken ?? data.access_token ?? data.jwt;
+      if (tokenValue) {
+        localStorage.setItem("token", tokenValue);
         navigate("/dashboard", { replace: true });
       }
     } catch (err) {

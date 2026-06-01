@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { clearAuthTokens, fetchWithAuth, getAccessToken } from '../lib/auth'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
@@ -78,7 +80,9 @@ export default function Dashboard() {
   const [token, setToken] = useState<string | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
+    const storedToken = localStorage.getItem('token')
+    if (!storedToken) {
+    const token = getAccessToken()
     if (!token) {
       navigate('/', { replace: true })
       return
@@ -87,8 +91,9 @@ export default function Dashboard() {
     setToken(storedToken)
 
     fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${storedToken}` },
     })
+    fetchWithAuth(`${API_URL}/auth/me`)
       .then((res) => {
         if (!res.ok) throw new Error('Unauthorized')
         return res.json()

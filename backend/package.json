@@ -20,6 +20,7 @@
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "elysia": "^1.4.28",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "resend": "^6.12.4"
   }
 }

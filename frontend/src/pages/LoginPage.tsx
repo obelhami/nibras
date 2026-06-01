@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import nibrasLogo from "../assets/nibras-logo.png";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -177,6 +178,7 @@ function FeatureIcon({ children }: { children: React.ReactNode }) {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -184,6 +186,21 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("verified") === "true") {
+      toast.success("Email successfully verified! You can now log in.");
+      setSearchParams({}, { replace: true });
+    }
+    if (searchParams.get("error") === "invalid_token") {
+      toast.error("Invalid verification link. Please request a new one.");
+      setSearchParams({}, { replace: true });
+    }
+    if (searchParams.get("error") === "token_expired") {
+      toast.error("Verification link has expired. Please request a new one.");
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");

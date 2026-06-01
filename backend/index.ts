@@ -7,6 +7,8 @@ import bcrypt from 'bcryptjs';
 import jsonwebtoken from 'jsonwebtoken';
 import { swagger } from "@elysiajs/swagger";
 import { t } from 'elysia';
+import crypto from 'crypto';
+import { sendVerificationEmail } from './email';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -143,16 +145,24 @@ const app = new Elysia()
         email: googlePayload.email,
         name: googlePayload.name,
         picture: googlePayload.picture,
+        is_verified: true,
       };
     }
 
     const localPayload = verifyAuthToken(auth);
     if (localPayload) {
+      const userResult = await db.execute({
+        sql: "SELECT is_verified FROM users WHERE email = ?",
+        args: [localPayload.email]
+      });
+      const isVerified = userResult.rows[0]?.is_verified === 1;
+
       return {
         id: localPayload.email,
         email: localPayload.email,
         name: localPayload.username,
         picture: null,
+        is_verified: isVerified,
       };
     }
 
@@ -204,7 +214,7 @@ const app = new Elysia()
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await db.execute({
-        sql: "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
+        sql: "INSERT INTO users (username, email, password, is_verified) VALUES (?, ?, ?, 0)",
         args: [username, email, hashedPassword]
     });
 
@@ -219,9 +229,25 @@ const app = new Elysia()
         args: [refreshToken, email, expiresAt.toISOString()]
     });
 
+    // send verification email
+    try {
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const tokenExpiry = new Date();
+        tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+
+        await db.execute({
+            sql: "INSERT INTO verification_tokens (token, user_email, expires_at) VALUES (?, ?, ?)",
+            args: [verificationToken, email, tokenExpiry.toISOString()]
+        });
+
+        await sendVerificationEmail(email, verificationToken, username);
+    } catch (err) {
+        console.error('Verification email failed (user still registered):', err);
+    }
+
     return {
         message: 'Registration successful',
-        user: { username, email },
+        user: { username, email, is_verified: false },
         accessToken,
         refreshToken
     };
@@ -246,6 +272,7 @@ const app = new Elysia()
         username: string;
         email: string;
         password: string;
+        is_verified: number;
     } | undefined;
 
     if (!user) {
@@ -273,9 +300,9 @@ const app = new Elysia()
 
     return {
         message: 'Login successful',
-        user: { username: user.username, email: user.email },
-        accessToken,   // send to frontend, use for every request, lives 15min
-        refreshToken   // send to frontend, use only to get new accessToken, lives 7days
+        user: { username: user.username, email: user.email, is_verified: user.is_verified === 1 },
+        accessToken,
+        refreshToken
     };
   }, {
     body: t.Object({
@@ -356,7 +383,102 @@ const app = new Elysia()
     })
   })
 
-  // ✅ new route - logout
+  // send verification email
+  .post('/auth/send-verification', async ({ headers, set }) => {
+    const payload = verifyAuthToken(headers.authorization);
+
+    if (!payload) {
+        set.status = 401;
+        return { message: 'Unauthorized' };
+    }
+
+    const userResult = await db.execute({
+        sql: "SELECT username, is_verified FROM users WHERE email = ?",
+        args: [payload.email]
+    });
+
+    const user = userResult.rows[0] as { username: string; is_verified: number } | undefined;
+
+    if (!user) {
+        set.status = 404;
+        return { message: 'User not found' };
+    }
+
+    if (user.is_verified === 1) {
+        return { message: 'Email already verified' };
+    }
+
+    // delete any existing tokens for this user
+    await db.execute({
+        sql: "DELETE FROM verification_tokens WHERE user_email = ?",
+        args: [payload.email]
+    });
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    await db.execute({
+        sql: "INSERT INTO verification_tokens (token, user_email, expires_at) VALUES (?, ?, ?)",
+        args: [verificationToken, payload.email, expiresAt.toISOString()]
+    });
+
+    await sendVerificationEmail(payload.email, verificationToken, user.username);
+
+    return { message: 'Verification email sent' };
+  })
+
+  // verify email token
+  .get('/auth/verify', async ({ query, set }) => {
+    const { token } = query;
+
+    if (!token) {
+        set.status = 400;
+        return { error: 'Missing token' };
+    }
+
+    const result = await db.execute({
+        sql: "SELECT * FROM verification_tokens WHERE token = ?",
+        args: [token]
+    });
+
+    const record = result.rows[0] as {
+        id: number;
+        token: string;
+        user_email: string;
+        expires_at: string;
+    } | undefined;
+
+    if (!record) {
+        set.headers['location'] = `${FRONTEND_URL}/?error=invalid_token`;
+        set.status = 302;
+        return;
+    }
+
+    if (new Date(record.expires_at) < new Date()) {
+        await db.execute({
+            sql: "DELETE FROM verification_tokens WHERE token = ?",
+            args: [token]
+        });
+        set.headers['location'] = `${FRONTEND_URL}/?error=token_expired`;
+        set.status = 302;
+        return;
+    }
+
+    await db.execute({
+        sql: "UPDATE users SET is_verified = 1 WHERE email = ?",
+        args: [record.user_email]
+    });
+
+    await db.execute({
+        sql: "DELETE FROM verification_tokens WHERE user_email = ?",
+        args: [record.user_email]
+    });
+
+    set.headers['location'] = `${FRONTEND_URL}/?verified=true`;
+    set.status = 302;
+  })
+
   .post('/logout', async ({ body, set }) => {
     const { refreshToken } = body;
 

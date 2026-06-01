@@ -102,7 +102,7 @@ export default function Dashboard() {
       .catch(() => {
         clearAuthTokens()
         navigate('/', { replace: true })
-      })
+      });
   }, [navigate])
 
   const handleLogout = () => {

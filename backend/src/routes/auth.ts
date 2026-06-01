@@ -1,6 +1,9 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { Google, generateState, generateCodeVerifier } from 'arctic';
 import { verifyAuthToken } from '../lib/jwt';
+import crypto from 'crypto';
+import { db } from '../../db';
+import { sendVerificationEmail } from '../../email';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -105,3 +108,69 @@ export default new Elysia()
     set.status = 401;
     return { error: 'Invalid token' };
   });
+
+  .post('/auth/send-verification', async ({ headers, set }) => {
+    const payload = verifyAuthToken(headers.authorization);
+
+    if (!payload) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const email = payload.email;
+    const username = payload.username ?? email.split('@')[0];
+
+    // generate token and expiry
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    await db.execute({
+      sql: 'INSERT INTO verification_tokens (token, user_email, expires_at) VALUES (?, ?, ?)',
+      args: [verificationToken, email, expiresAt.toISOString()],
+    });
+
+    await sendVerificationEmail(email, verificationToken, username);
+
+    return { message: 'Verification email sent' };
+  }, {
+    body: t.Object({})
+  })
+
+  .get('/auth/verify', async ({ query, set }) => {
+    const { token } = query as { token?: string };
+
+    if (!token) {
+      set.status = 400;
+      return { error: 'Missing token' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT * FROM verification_tokens WHERE token = ?',
+      args: [token],
+    });
+
+    const row = result.rows[0] as { id: number; token: string; user_email: string; expires_at: string } | undefined;
+
+    if (!row) {
+      set.status = 302;
+      set.headers['location'] = `${FRONTEND_URL}/?error=invalid_token`;
+      return;
+    }
+
+    if (new Date(row.expires_at) < new Date()) {
+      // delete expired token
+      await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
+      set.status = 302;
+      set.headers['location'] = `${FRONTEND_URL}/?error=token_expired`;
+      return;
+    }
+
+    // mark user verified
+    await db.execute({ sql: 'UPDATE users SET is_verified = 1 WHERE email = ?', args: [row.user_email] });
+    // remove token
+    await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
+
+    set.status = 302;
+    set.headers['location'] = `${FRONTEND_URL}/?verified=true`;
+  })

@@ -1,6 +1,5 @@
 import { Elysia } from 'elysia';
 import { Google, generateState, generateCodeVerifier } from 'arctic';
-import { db } from '../../db';
 import { verifyAuthToken } from '../lib/jwt';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';

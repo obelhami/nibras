@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import nibrasLogo from "../assets/nibras-logo.png";
+import { fetchWithAuth, setAuthTokens, getAccessToken } from "../lib/auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -186,11 +187,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getAccessToken();
     if (token) {
-      fetch(`${API_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      fetchWithAuth(`${API_URL}/auth/me`)
         .then((res) => {
           if (res.ok) navigate("/dashboard", { replace: true });
         })
@@ -224,8 +223,9 @@ export default function LoginPage() {
 
       // backend may return the token under different keys (accessToken, token, access_token)
       const tokenValue = data.token ?? data.accessToken ?? data.access_token ?? data.jwt;
+      const refreshTokenValue = data.refreshToken ?? data.refresh_token;
       if (tokenValue) {
-        localStorage.setItem("token", tokenValue);
+        setAuthTokens({ accessToken: tokenValue, refreshToken: refreshTokenValue });
         navigate("/dashboard", { replace: true });
       }
     } catch (err) {

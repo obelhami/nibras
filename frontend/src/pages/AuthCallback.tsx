@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { setAuthTokens } from '../lib/auth'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
@@ -8,7 +9,7 @@ export default function AuthCallback() {
   useEffect(() => {
     const token = searchParams.get('token')
     if (token) {
-      localStorage.setItem('token', token)
+      setAuthTokens({ accessToken: token })
       navigate('/dashboard', { replace: true })
     } else {
       navigate('/?error=auth_failed', { replace: true })

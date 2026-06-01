@@ -5,6 +5,10 @@ services:
       - "3000:3000"
     env_file:
       - ./backend/.env
+    environment:
+      TURSO_DATABASE_URL: file:/data/local.db
+    volumes:
+      - ./backend/data:/data
 
   frontend:
     build: ./frontend

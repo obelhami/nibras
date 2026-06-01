@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import nibrasLogo from "../assets/nibras-logo.png";
-import { fetchWithAuth, setAuthTokens, getAccessToken } from "../lib/auth";
+import { fetchWithAuth, setAuthTokens } from "../lib/auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 

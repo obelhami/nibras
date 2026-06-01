@@ -2,9 +2,11 @@ import { Elysia, t } from 'elysia';
 import { Google, generateState, generateCodeVerifier } from 'arctic';
 import { verifyAuthToken } from '../lib/jwt';
 import crypto from 'crypto';
+import jsonwebtoken from 'jsonwebtoken';
 import { db } from '../../db';
 import { sendVerificationEmail } from '../../email';
 
+const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
 const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:3000';
@@ -35,7 +37,7 @@ export default new Elysia()
     set.headers['location'] = url.toString();
   })
 
-  .get('/auth/google/callback', async ({ query, set, jwt }) => {
+  .get('/auth/google/callback', async ({ query, set }) => {
     const { code, state } = query;
 
     if (!state || !stateStore.has(state)) {
@@ -53,19 +55,19 @@ export default new Elysia()
       const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      const googleUser: {
+      const googleUser = (await res.json()) as {
         id: string;
         email: string;
         name: string;
         picture: string;
-      } = await res.json();
+      };
 
-      const token = await jwt.sign({
+      const token = jsonwebtoken.sign({
         sub: googleUser.id,
         email: googleUser.email,
         name: googleUser.name,
         picture: googleUser.picture,
-      });
+      }, JWT_SECRET);
 
       set.status = 302;
       set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${token}`;
@@ -76,7 +78,7 @@ export default new Elysia()
     }
   })
 
-  .get('/auth/me', async ({ headers, jwt, set }) => {
+  .get('/auth/me', async ({ headers, set }) => {
     const auth = headers['authorization'];
     if (!auth?.startsWith('Bearer ')) {
       set.status = 401;
@@ -85,13 +87,13 @@ export default new Elysia()
 
     const token = auth.slice(7);
 
-    const googlePayload = await jwt.verify(token);
-    if (googlePayload) {
+    const googlePayload = jsonwebtoken.verify(token, JWT_SECRET);
+    if (typeof googlePayload === 'object' && googlePayload) {
       return {
-        id: googlePayload.sub,
-        email: googlePayload.email,
-        name: googlePayload.name,
-        picture: googlePayload.picture,
+        id: String(googlePayload.sub ?? ''),
+        email: String(googlePayload.email ?? ''),
+        name: typeof googlePayload.name === 'string' ? googlePayload.name : null,
+        picture: typeof googlePayload.picture === 'string' ? googlePayload.picture : null,
       };
     }
 
@@ -107,7 +109,7 @@ export default new Elysia()
 
     set.status = 401;
     return { error: 'Invalid token' };
-  });
+  })
 
   .post('/auth/send-verification', async ({ headers, set }) => {
     const payload = verifyAuthToken(headers.authorization);

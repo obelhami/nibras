@@ -80,19 +80,14 @@ export default function Dashboard() {
   const [token, setToken] = useState<string | null>(null)
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token')
-    if (!storedToken) {
     const token = getAccessToken()
     if (!token) {
       navigate('/', { replace: true })
       return
     }
 
-    setToken(storedToken)
+    setToken(token)
 
-    fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${storedToken}` },
-    })
     fetchWithAuth(`${API_URL}/auth/me`)
       .then((res) => {
         if (!res.ok) throw new Error('Unauthorized')
@@ -102,7 +97,7 @@ export default function Dashboard() {
       .catch(() => {
         clearAuthTokens()
         navigate('/', { replace: true })
-      });
+      })
   }, [navigate])
 
   const handleLogout = () => {

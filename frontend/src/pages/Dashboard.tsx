@@ -26,7 +26,17 @@ function VerificationOverlay({ email, token }: { email: string; token: string })
           Authorization: `Bearer ${token}`,
         },
       })
-      const data = await res.json()
+
+      const raw = await res.text()
+      let data: { message?: string } = {}
+      if (raw) {
+        try {
+          data = JSON.parse(raw) as { message?: string }
+        } catch {
+          data = { message: raw }
+        }
+      }
+
       if (!res.ok) throw new Error(data.message ?? 'Failed to resend')
       toast.success('Verification link sent! Check your inbox.')
     } catch (err) {
@@ -78,6 +88,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
+  const needsVerification = sessionStorage.getItem('pending-verification') === 'true'
 
   useEffect(() => {
     const token = getAccessToken()
@@ -102,6 +113,7 @@ export default function Dashboard() {
 
   const handleLogout = () => {
     clearAuthTokens()
+    sessionStorage.removeItem('pending-verification')
     navigate('/', { replace: true })
   }
 
@@ -117,7 +129,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      {!user.is_verified && token && (
+      {needsVerification && !user.is_verified && token && (
         <VerificationOverlay email={user.email} token={token} />
       )}
 

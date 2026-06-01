@@ -243,7 +243,13 @@ export default function LoginPage() {
       const refreshTokenValue = data.refreshToken ?? data.refresh_token;
       if (tokenValue) {
         setAuthTokens({ accessToken: tokenValue, refreshToken: refreshTokenValue });
-        navigate("/dashboard", { replace: true });
+        if (activeTab === "register") {
+          sessionStorage.setItem("pending-verification", "true");
+          navigate("/verify-email", { replace: true });
+        } else {
+          sessionStorage.removeItem("pending-verification");
+          navigate("/dashboard", { replace: true });
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

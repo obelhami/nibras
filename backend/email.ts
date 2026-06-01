@@ -102,6 +102,11 @@ export async function sendVerificationEmail(to: string, token: string, username:
 
     if (error) {
         console.error('Failed to send verification email:', error);
-        throw new Error('Failed to send verification email');
+      const providerMessage =
+        typeof error === 'object' && error && 'message' in error
+          ? String(error.message)
+          : 'Failed to send verification email';
+
+      throw new Error(providerMessage);
     }
 }

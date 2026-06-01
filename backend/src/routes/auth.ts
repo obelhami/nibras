@@ -94,16 +94,24 @@ export default new Elysia()
         email: String(googlePayload.email ?? ''),
         name: typeof googlePayload.name === 'string' ? googlePayload.name : null,
         picture: typeof googlePayload.picture === 'string' ? googlePayload.picture : null,
+        is_verified: true,
       };
     }
 
     const localPayload = verifyAuthToken(auth);
     if (localPayload) {
+      const result = await db.execute({
+        sql: 'SELECT is_verified FROM users WHERE email = ?',
+        args: [localPayload.email],
+      });
+      const row = result.rows[0] as { is_verified: number } | undefined;
+
       return {
         id: localPayload.email,
         email: localPayload.email,
         name: localPayload.username,
         picture: null,
+        is_verified: row?.is_verified === 1,
       };
     }
 
@@ -132,9 +140,18 @@ export default new Elysia()
       args: [verificationToken, email, expiresAt.toISOString()],
     });
 
-    await sendVerificationEmail(email, verificationToken, username);
-
-    return { message: 'Verification email sent' };
+    try {
+      await sendVerificationEmail(email, verificationToken, username);
+      return { message: 'Verification email sent' };
+    } catch (error) {
+      console.error('Send verification endpoint error:', error);
+      set.status = 502;
+      return {
+        message: error instanceof Error
+          ? error.message
+          : 'Failed to send verification email',
+      };
+    }
   }, {
     body: t.Object({})
   })
@@ -156,7 +173,7 @@ export default new Elysia()
 
     if (!row) {
       set.status = 302;
-      set.headers['location'] = `${FRONTEND_URL}/?error=invalid_token`;
+      set.headers['location'] = `${FRONTEND_URL}/verify-email?error=invalid_token`;
       return;
     }
 
@@ -164,7 +181,7 @@ export default new Elysia()
       // delete expired token
       await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
       set.status = 302;
-      set.headers['location'] = `${FRONTEND_URL}/?error=token_expired`;
+      set.headers['location'] = `${FRONTEND_URL}/verify-email?error=token_expired`;
       return;
     }
 
@@ -174,5 +191,5 @@ export default new Elysia()
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
 
     set.status = 302;
-    set.headers['location'] = `${FRONTEND_URL}/?verified=true`;
+    set.headers['location'] = `${FRONTEND_URL}/verify-email?verified=true`;
   })

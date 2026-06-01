@@ -24,6 +24,6 @@ const app = new Elysia()
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');
-console.log(app.routes);
+console.log("DB URL:", process.env.TURSO_DATABASE_URL);
 
 export default app;

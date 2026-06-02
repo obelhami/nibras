@@ -160,4 +160,117 @@ export default new Elysia()
     return { message: 'Logged out successfully' };
   }, {
     body: t.Object({ refreshToken: t.String() }),
+  })
+
+  .patch('/profile', async ({ headers, body, set }) => {
+    const payload = verifyAuthToken(headers.authorization);
+
+    if (!payload) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT username, email, password, picture, is_verified FROM users WHERE email = ?',
+      args: [payload.email],
+    });
+
+    const user = result.rows[0] as {
+      username: string;
+      email: string;
+      password: string;
+      picture: string | null;
+      is_verified: number;
+    } | undefined;
+
+    if (!user) {
+      set.status = 404;
+      return { message: 'User not found' };
+    }
+
+    const { username, currentPassword, newPassword, confirmNewPassword } = body;
+    const updates: string[] = [];
+    const values: Array<string> = [];
+    let nextUsername = user.username;
+
+    if (typeof username === 'string') {
+      const trimmedUsername = username.trim();
+
+      if (!trimmedUsername) {
+        set.status = 400;
+        return { message: 'Username cannot be empty' };
+      }
+
+      nextUsername = trimmedUsername;
+      updates.push('username = ?');
+      values.push(trimmedUsername);
+    }
+
+    const wantsPasswordChange =
+      typeof currentPassword === 'string'
+      || typeof newPassword === 'string'
+      || typeof confirmNewPassword === 'string';
+
+    if (wantsPasswordChange) {
+      if (!currentPassword || !newPassword || !confirmNewPassword) {
+        set.status = 400;
+        return { message: 'Current password, new password, and confirmation are required' };
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+
+      if (!isCurrentPasswordValid) {
+        set.status = 401;
+        return { message: 'Current password is incorrect' };
+      }
+
+      if (newPassword.length < 6) {
+        set.status = 400;
+        return { message: 'New password must be at least 6 characters long' };
+      }
+
+      if (newPassword !== confirmNewPassword) {
+        set.status = 400;
+        return { message: 'New passwords do not match' };
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      updates.push('password = ?');
+      values.push(hashedPassword);
+    }
+
+    if (updates.length === 0) {
+      set.status = 400;
+      return { message: 'No profile changes provided' };
+    }
+
+    values.push(user.email);
+
+    await db.execute({
+      sql: `UPDATE users SET ${updates.join(', ')} WHERE email = ?`,
+      args: values,
+    });
+
+    const accessToken = createAccessToken({
+      username: nextUsername,
+      email: user.email,
+    });
+
+    return {
+      message: 'Profile updated successfully',
+      accessToken,
+      user: {
+        username: nextUsername,
+        email: user.email,
+        picture: user.picture,
+        is_verified: user.is_verified === 1,
+      },
+    };
+  }, {
+    body: t.Object({
+      username: t.Optional(t.String()),
+      currentPassword: t.Optional(t.String()),
+      newPassword: t.Optional(t.String({ minLength: 6 })),
+      confirmNewPassword: t.Optional(t.String()),
+    }),
   });

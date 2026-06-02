@@ -31,6 +31,7 @@ async function initDB() {
             username TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
+            picture TEXT,
             is_verified INTEGER NOT NULL DEFAULT 0
         )
     `);
@@ -52,6 +53,7 @@ async function initDB() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             token TEXT UNIQUE NOT NULL,
             user_email TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
             expires_at TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -68,12 +70,26 @@ async function initDB() {
         // column already exists → ignore
     }
 
+    try {
+        await db.execute(`
+            ALTER TABLE users ADD COLUMN picture TEXT
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
+    try {
+        await db.execute(`
+            ALTER TABLE verification_tokens ADD COLUMN payload TEXT NOT NULL DEFAULT '{}'
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
     console.log("✅ Database initialized successfully");
 }
 
-/**
- * 🚀 Run initialization once on startup
- */
+
 initDB().catch((err) => {
     console.error("❌ DB init failed:", err);
     process.exit(1);

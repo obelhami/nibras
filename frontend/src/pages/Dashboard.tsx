@@ -89,8 +89,17 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const needsVerification = sessionStorage.getItem('pending-verification') === 'true'
+  const searchParams = new URLSearchParams(window.location.search)
+  const verified = searchParams.get('verified') === 'true'
 
   useEffect(() => {
+    if (verified) {
+      sessionStorage.removeItem('pending-verification')
+      toast.success('Email verified. You can now use your dashboard.')
+      navigate('/dashboard', { replace: true })
+      return
+    }
+
     const token = getAccessToken()
     if (!token) {
       navigate('/', { replace: true })

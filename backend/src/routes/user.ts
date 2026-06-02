@@ -1,7 +1,9 @@
 import { Elysia, t } from 'elysia';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../../db';
-import { createAccessToken, createRefreshToken, verifyAuthToken } from '../lib/jwt';
+import { createAccessToken, createRefreshToken, createVerificationToken, verifyAuthToken } from '../lib/jwt';
+import { sendVerificationEmail } from '../../email';
 
 export default new Elysia()
   .get('/profile', ({ headers, set }) => {
@@ -48,26 +50,38 @@ export default new Elysia()
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await db.execute({
-      sql: 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-      args: [username, email, hashedPassword],
+      sql: 'DELETE FROM verification_tokens WHERE user_email = ?',
+      args: [email],
     });
 
-    const accessToken = createAccessToken({ username, email });
-    const refreshToken = createRefreshToken({ email });
-
-    // save refresh token in database
+    const verificationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
     await db.execute({
-      sql: 'INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)',
-      args: [refreshToken, email, expiresAt.toISOString()],
+      sql: 'INSERT INTO verification_tokens (token, user_email, payload, expires_at) VALUES (?, ?, ?, ?)',
+      args: [
+        verificationToken,
+        email,
+        JSON.stringify({ username, passwordHash: hashedPassword }),
+        expiresAt.toISOString(),
+      ],
     });
+
+    const accessToken = createVerificationToken({ username, email });
+
+    try {
+      await sendVerificationEmail(email, verificationToken, username);
+    } catch (error) {
+      set.status = 502;
+      return {
+        message: error instanceof Error ? error.message : 'Failed to send verification email',
+      };
+    }
 
     return {
       message: 'Registration successful',
-      user: { username, email },
       accessToken,
-      refreshToken,
     };
   }, {
     body: t.Object({
@@ -90,11 +104,17 @@ export default new Elysia()
       username: string;
       email: string;
       password: string;
+      is_verified?: number;
     } | undefined;
 
     if (!user) {
       set.status = 404;
       return { message: 'User not found' };
+    }
+
+    if (user.is_verified !== 1) {
+      set.status = 403;
+      return { message: 'Please verify your email first' };
     }
 
     const isMatch = await bcrypt.compare(password, user.password as string);

@@ -55,12 +55,33 @@ export default new Elysia()
       const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
+      if (!res.ok) {
+        throw new Error(`Google userinfo request failed with status ${res.status}`);
+      }
+
       const googleUser = (await res.json()) as {
         id: string;
         email: string;
         name: string;
         picture: string;
       };
+
+      await db.execute({
+        sql: `
+          INSERT INTO users (username, email, password, picture, is_verified)
+          VALUES (?, ?, ?, ?, 1)
+          ON CONFLICT(email) DO UPDATE SET
+            username = excluded.username,
+            picture = excluded.picture,
+            is_verified = 1
+        `,
+        args: [
+          googleUser.name,
+          googleUser.email,
+          crypto.randomBytes(32).toString('hex'),
+          googleUser.picture ?? null,
+        ],
+      });
 
       const token = jsonwebtoken.sign({
         sub: googleUser.id,
@@ -87,32 +108,63 @@ export default new Elysia()
 
     const token = auth.slice(7);
 
-    const googlePayload = jsonwebtoken.verify(token, JWT_SECRET);
-    if (typeof googlePayload === 'object' && googlePayload) {
-      return {
-        id: String(googlePayload.sub ?? ''),
-        email: String(googlePayload.email ?? ''),
-        name: typeof googlePayload.name === 'string' ? googlePayload.name : null,
-        picture: typeof googlePayload.picture === 'string' ? googlePayload.picture : null,
-        is_verified: true,
-      };
-    }
+    try {
+      const payload = jsonwebtoken.verify(token, JWT_SECRET) as Record<string, unknown>;
+      const email = typeof payload.email === 'string' ? payload.email : '';
 
-    const localPayload = verifyAuthToken(auth);
-    if (localPayload) {
-      const result = await db.execute({
-        sql: 'SELECT is_verified FROM users WHERE email = ?',
-        args: [localPayload.email],
-      });
-      const row = result.rows[0] as { is_verified: number } | undefined;
+      if (email) {
+        const result = await db.execute({
+          sql: 'SELECT username, email, picture, is_verified FROM users WHERE email = ?',
+          args: [email],
+        });
+        const row = result.rows[0] as {
+          username: string;
+          email: string;
+          picture: string | null;
+          is_verified: number;
+        } | undefined;
 
-      return {
-        id: localPayload.email,
-        email: localPayload.email,
-        name: localPayload.username,
-        picture: null,
-        is_verified: row?.is_verified === 1,
-      };
+        if (row) {
+          return {
+            id: row.email,
+            email: row.email,
+            name: row.username,
+            picture: row.picture,
+            is_verified: row.is_verified === 1,
+          };
+        }
+
+        if (payload.purpose === 'verification') {
+          const pendingResult = await db.execute({
+            sql: 'SELECT payload FROM verification_tokens WHERE user_email = ? ORDER BY id DESC LIMIT 1',
+            args: [email],
+          });
+          const pendingRow = pendingResult.rows[0] as { payload: string } | undefined;
+          const pendingPayload = pendingRow?.payload
+            ? JSON.parse(pendingRow.payload) as { username?: string; passwordHash?: string }
+            : {};
+
+          return {
+            id: email,
+            email,
+            name: pendingPayload.username ?? (typeof payload.username === 'string' ? payload.username : email.split('@')[0]),
+            picture: null,
+            is_verified: false,
+          };
+        }
+
+        if (typeof payload.sub === 'string') {
+          return {
+            id: String(payload.sub),
+            email,
+            name: typeof payload.name === 'string' ? payload.name : null,
+            picture: typeof payload.picture === 'string' ? payload.picture : null,
+            is_verified: true,
+          };
+        }
+      }
+    } catch {
+      // fall through to 401 below
     }
 
     set.status = 401;
@@ -127,21 +179,51 @@ export default new Elysia()
       return { message: 'Unauthorized' };
     }
 
-    const email = payload.email;
-    const username = payload.username ?? email.split('@')[0];
+    if (payload.purpose !== 'verification') {
+      set.status = 400;
+      return { message: 'Verification is only available for pending signups' };
+    }
 
-    // generate token and expiry
+    const email = payload.email;
+    const pendingResult = await db.execute({
+      sql: 'SELECT payload FROM verification_tokens WHERE user_email = ? ORDER BY id DESC LIMIT 1',
+      args: [email],
+    });
+    const pendingRow = pendingResult.rows[0] as { payload: string } | undefined;
+
+    if (!pendingRow) {
+      set.status = 404;
+      return { message: 'No pending verification request found' };
+    }
+
+    const pendingPayload = JSON.parse(pendingRow.payload) as { username?: string; passwordHash?: string };
+    const emailFallback = email.split('@')[0] ?? 'user';
+    const resolvedUsername: string = pendingPayload.username ?? payload.username ?? emailFallback;
+
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
 
     await db.execute({
-      sql: 'INSERT INTO verification_tokens (token, user_email, expires_at) VALUES (?, ?, ?)',
-      args: [verificationToken, email, expiresAt.toISOString()],
+      sql: 'DELETE FROM verification_tokens WHERE user_email = ?',
+      args: [email],
+    });
+
+    await db.execute({
+      sql: 'INSERT INTO verification_tokens (token, user_email, payload, expires_at) VALUES (?, ?, ?, ?)',
+      args: [
+        verificationToken,
+        email,
+        JSON.stringify({
+          username: resolvedUsername,
+          passwordHash: pendingPayload.passwordHash ?? null,
+        }),
+        expiresAt.toISOString(),
+      ],
     });
 
     try {
-      await sendVerificationEmail(email, verificationToken, username);
+      await sendVerificationEmail(email, verificationToken, resolvedUsername);
       return { message: 'Verification email sent' };
     } catch (error) {
       console.error('Send verification endpoint error:', error);
@@ -165,11 +247,11 @@ export default new Elysia()
     }
 
     const result = await db.execute({
-      sql: 'SELECT * FROM verification_tokens WHERE token = ?',
+      sql: 'SELECT id, token, user_email, payload, expires_at FROM verification_tokens WHERE token = ?',
       args: [token],
     });
 
-    const row = result.rows[0] as { id: number; token: string; user_email: string; expires_at: string } | undefined;
+    const row = result.rows[0] as { id: number; token: string; user_email: string; payload: string; expires_at: string } | undefined;
 
     if (!row) {
       set.status = 302;
@@ -185,11 +267,34 @@ export default new Elysia()
       return;
     }
 
+    let pendingPayload: { username?: string; passwordHash?: string } = {};
+    if (row.payload) {
+      pendingPayload = JSON.parse(row.payload) as { username?: string; passwordHash?: string };
+    }
+
     // mark user verified
-    await db.execute({ sql: 'UPDATE users SET is_verified = 1 WHERE email = ?', args: [row.user_email] });
+    const verifiedUsername: string = pendingPayload.username ?? (row.user_email.split('@')[0] ?? 'user');
+    const verifiedPasswordHash = pendingPayload.passwordHash ?? crypto.randomBytes(32).toString('hex');
+
+    await db.execute({
+      sql: `
+        INSERT INTO users (username, email, password, picture, is_verified)
+        VALUES (?, ?, ?, NULL, 1)
+        ON CONFLICT(email) DO UPDATE SET
+          username = excluded.username,
+          password = excluded.password,
+          is_verified = 1
+      `,
+      args: [
+        verifiedUsername,
+        row.user_email,
+        verifiedPasswordHash,
+      ],
+    });
     // remove token
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
+    await db.execute({ sql: 'DELETE FROM verification_tokens WHERE user_email = ?', args: [row.user_email] });
 
     set.status = 302;
-    set.headers['location'] = `${FRONTEND_URL}/verify-email?verified=true`;
+    set.headers['location'] = `${FRONTEND_URL}/dashboard?verified=true`;
   })

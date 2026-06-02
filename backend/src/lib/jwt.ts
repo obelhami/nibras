@@ -16,6 +16,13 @@ export const createRefreshToken = (user: { email: string }) =>
     { expiresIn: '7d' }
   );
 
+export const createVerificationToken = (user: { username: string; email: string }) =>
+  jsonwebtoken.sign(
+    { email: user.email, username: user.username, purpose: 'verification' },
+    jwtSecret,
+    { expiresIn: '24h' }
+  );
+
 export const verifyAuthToken = (authorizationHeader: string | undefined) => {
   if (!authorizationHeader?.startsWith('Bearer ')) {
     return null;
@@ -27,6 +34,7 @@ export const verifyAuthToken = (authorizationHeader: string | undefined) => {
     return jsonwebtoken.verify(token, jwtSecret) as {
       email: string;
       username: string;
+      purpose?: 'verification';
       iat: number;
       exp: number;
     };

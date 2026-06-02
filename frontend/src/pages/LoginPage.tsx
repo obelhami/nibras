@@ -207,8 +207,15 @@ export default function LoginPage() {
     const token = localStorage.getItem("token");
     if (token) {
       fetchWithAuth(`${API_URL}/auth/me`)
-        .then((res) => {
-          if (res.ok) navigate("/dashboard", { replace: true });
+        .then(async (res) => {
+          if (!res.ok) {
+            return;
+          }
+
+          const data = await res.json() as { is_verified?: boolean };
+          if (data.is_verified) {
+            navigate("/dashboard", { replace: true });
+          }
         })
         .catch(() => {});
     }

@@ -2,9 +2,9 @@ import jsonwebtoken from 'jsonwebtoken';
 
 const jwtSecret = process.env.JWT_SECRET ?? 'dev-secret-change-me';
 
-export const createAccessToken = (user: { username: string; email: string }) =>
+export const createAccessToken = (user: { username: string; email: string; role?: string | null }) =>
   jsonwebtoken.sign(
-    { email: user.email, username: user.username },
+    { email: user.email, username: user.username, ...(user.role ? { role: user.role } : {}) },
     jwtSecret,
     { expiresIn: '15m' }
   );

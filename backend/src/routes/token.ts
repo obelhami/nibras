@@ -51,6 +51,7 @@ export default new Elysia().post('/auth/refresh', async ({ body, set }) => {
     const user = userResult.rows[0] as {
       username: string;
       email: string;
+      role: string | null;
     } | undefined;
 
     if (!user) {

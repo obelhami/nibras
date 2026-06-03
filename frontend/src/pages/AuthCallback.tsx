@@ -8,9 +8,10 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const token = searchParams.get('token')
+    const redirect = searchParams.get('redirect') ?? '/dashboard'
     if (token) {
       setAuthTokens({ accessToken: token })
-      navigate('/dashboard', { replace: true })
+      navigate(redirect, { replace: true })
     } else {
       navigate('/?error=auth_failed', { replace: true })
     }

@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { Google, generateState, generateCodeVerifier } from 'arctic';
 import { verifyAuthToken } from '../lib/jwt';
+import { getPermissions } from '../lib/permissions';
 import crypto from 'crypto';
 import jsonwebtoken from 'jsonwebtoken';
 import { db } from '../../db';
@@ -83,15 +84,23 @@ export default new Elysia()
         ],
       });
 
+      const userResult = await db.execute({
+        sql: 'SELECT role FROM users WHERE email = ?',
+        args: [googleUser.email],
+      });
+      const existingUser = userResult.rows[0] as { role: string | null } | undefined;
+
       const token = jsonwebtoken.sign({
         sub: googleUser.id,
         email: googleUser.email,
         name: googleUser.name,
         picture: googleUser.picture,
+        ...(existingUser?.role ? { role: existingUser.role } : {}),
       }, JWT_SECRET);
 
+      const redirectPath = existingUser?.role ? '/dashboard' : '/choose-role';
       set.status = 302;
-      set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${token}`;
+      set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${token}&redirect=${redirectPath}`;
     } catch (err) {
       console.error('Google OAuth error:', err);
       set.status = 302;
@@ -114,7 +123,7 @@ export default new Elysia()
 
       if (email) {
         const result = await db.execute({
-          sql: 'SELECT username, email, picture, is_verified FROM users WHERE email = ?',
+          sql: 'SELECT username, email, picture, is_verified, role FROM users WHERE email = ?',
           args: [email],
         });
         const row = result.rows[0] as {
@@ -122,6 +131,7 @@ export default new Elysia()
           email: string;
           picture: string | null;
           is_verified: number;
+          role: string | null;
         } | undefined;
 
         if (row) {
@@ -131,6 +141,8 @@ export default new Elysia()
             name: row.username,
             picture: row.picture,
             is_verified: row.is_verified === 1,
+            role: row.role,
+            permissions: getPermissions(row.role),
           };
         }
 
@@ -296,5 +308,5 @@ export default new Elysia()
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE user_email = ?', args: [row.user_email] });
 
     set.status = 302;
-    set.headers['location'] = `${FRONTEND_URL}/dashboard?verified=true`;
+    set.headers['location'] = `${FRONTEND_URL}/choose-role?verified=true`;
   })

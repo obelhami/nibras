@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { clearAuthTokens, fetchWithAuth, getAccessToken } from '../lib/auth'
+import { getPermissions, type Permissions } from '../lib/permissions'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
@@ -11,6 +12,7 @@ interface User {
   name: string | null
   picture: string | null
   is_verified: boolean
+  role: string | null
 }
 
 function VerificationOverlay({ email, token }: { email: string; token: string }) {
@@ -113,7 +115,13 @@ export default function Dashboard() {
         if (!res.ok) throw new Error('Unauthorized')
         return res.json()
       })
-      .then(setUser)
+      .then((data: User) => {
+        if (!data.role) {
+          navigate('/choose-role', { replace: true })
+          return
+        }
+        setUser(data)
+      })
       .catch(() => {
         clearAuthTokens()
         navigate('/', { replace: true })
@@ -135,6 +143,60 @@ export default function Dashboard() {
   }
 
   const displayName = user.name ?? user.email.split('@')[0]
+  const perms: Permissions = getPermissions(user.role)
+
+  const roleLabels: Record<string, string> = {
+    admin: 'Administrateur',
+    manager: 'Manager',
+    developer: 'Développeur',
+  }
+
+  const actions: { key: keyof Permissions; label: string; icon: React.ReactNode }[] = [
+    {
+      key: 'create_project',
+      label: 'Créer un projet',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          <line x1="12" y1="11" x2="12" y2="17" />
+          <line x1="9" y1="14" x2="15" y2="14" />
+        </svg>
+      ),
+    },
+    {
+      key: 'create_task',
+      label: 'Créer une tâche',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+        </svg>
+      ),
+    },
+    {
+      key: 'view_team_kpis',
+      label: 'Voir les KPIs',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
+        </svg>
+      ),
+    },
+    {
+      key: 'manage_users',
+      label: 'Gérer les utilisateurs',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      ),
+    },
+  ]
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -142,26 +204,54 @@ export default function Dashboard() {
         <VerificationOverlay email={user.email} token={token} />
       )}
 
-      <div className="w-full max-w-sm rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-lg">
-        {user.picture ? (
-          <img
-            src={user.picture}
-            alt={displayName}
-            className="mx-auto mb-4 h-20 w-20 rounded-full"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-2xl font-bold text-blue-600">
-            {displayName.charAt(0).toUpperCase()}
+      <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-lg">
+        <div className="mb-6 flex items-center gap-4">
+          {user.picture ? (
+            <img
+              src={user.picture}
+              alt={displayName}
+              className="h-14 w-14 rounded-full"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-600">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">{displayName}</h1>
+            <p className="text-sm text-gray-500">{user.email}</p>
+            <span className="mt-1 inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+              {roleLabels[user.role!] ?? user.role}
+            </span>
           </div>
-        )}
-        <h1 className="mb-1 text-xl font-bold text-gray-900">{displayName}</h1>
-        <p className="mb-6 text-sm text-gray-500">{user.email}</p>
+        </div>
+
+        <div className="mb-6 border-t border-gray-100 pt-5">
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">Actions disponibles</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {actions.map((action) => (
+              <button
+                key={action.key}
+                disabled={!perms[action.key]}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
+                  perms[action.key]
+                    ? 'border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50'
+                    : 'cursor-not-allowed border-gray-100 text-gray-300'
+                }`}
+              >
+                {action.icon}
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           onClick={handleLogout}
-          className="rounded-lg bg-red-500 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
+          className="w-full rounded-lg bg-red-500 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-600"
         >
-          Se d&eacute;connecter
+          Se déconnecter
         </button>
       </div>
     </div>

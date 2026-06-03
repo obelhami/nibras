@@ -86,6 +86,14 @@ async function initDB() {
         // column already exists → ignore
     }
 
+    try {
+        await db.execute(`
+            ALTER TABLE users ADD COLUMN role TEXT DEFAULT NULL
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
     console.log("✅ Database initialized successfully");
 }
 

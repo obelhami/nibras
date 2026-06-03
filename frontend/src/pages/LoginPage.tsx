@@ -212,9 +212,9 @@ export default function LoginPage() {
             return;
           }
 
-          const data = await res.json() as { is_verified?: boolean };
+          const data = await res.json() as { is_verified?: boolean; role?: string | null };
           if (data.is_verified) {
-            navigate("/dashboard", { replace: true });
+            navigate(data.role ? "/dashboard" : "/choose-role", { replace: true });
           }
         })
         .catch(() => {});
@@ -255,7 +255,8 @@ export default function LoginPage() {
           navigate("/verify-email", { replace: true });
         } else {
           sessionStorage.removeItem("pending-verification");
-          navigate("/dashboard", { replace: true });
+          const userRole = data.user?.role;
+          navigate(userRole ? "/dashboard" : "/choose-role", { replace: true });
         }
       }
     } catch (err) {

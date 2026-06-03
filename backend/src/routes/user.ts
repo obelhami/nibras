@@ -92,6 +92,66 @@ export default new Elysia()
     }),
   })
 
+  .post('/user/role', async ({ body, headers, set }) => {
+    const payload = verifyAuthToken(headers.authorization);
+
+    if (!payload) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const { role } = body;
+    const validRoles = ['admin', 'manager', 'developer'];
+
+    if (!validRoles.includes(role)) {
+      set.status = 400;
+      return { message: 'Invalid role. Must be one of: admin, manager, developer' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT id, role FROM users WHERE email = ?',
+      args: [payload.email],
+    });
+
+    const user = result.rows[0] as { id: number; role: string | null } | undefined;
+
+    if (!user) {
+      set.status = 404;
+      return { message: 'User not found' };
+    }
+
+    if (user.role) {
+      set.status = 409;
+      return { message: 'Role already assigned' };
+    }
+
+    await db.execute({
+      sql: 'UPDATE users SET role = ? WHERE email = ?',
+      args: [role, payload.email],
+    });
+
+    const accessToken = createAccessToken({ username: payload.username, email: payload.email, role });
+    const refreshToken = createRefreshToken({ email: payload.email });
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    await db.execute({
+      sql: 'INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)',
+      args: [refreshToken, payload.email, expiresAt.toISOString()],
+    });
+
+    return {
+      message: 'Role assigned successfully',
+      role,
+      accessToken,
+      refreshToken,
+    };
+  }, {
+    body: t.Object({
+      role: t.String(),
+    }),
+  })
+
   .post('/login', async ({ body, set }) => {
     const { email, password } = body;
 
@@ -105,6 +165,7 @@ export default new Elysia()
       email: string;
       password: string;
       is_verified?: number;
+      role?: string | null;
     } | undefined;
 
     if (!user) {
@@ -124,10 +185,9 @@ export default new Elysia()
       return { message: 'Wrong password' };
     }
 
-    const accessToken = createAccessToken(user);
+    const accessToken = createAccessToken({ username: user.username, email: user.email, role: user.role });
     const refreshToken = createRefreshToken(user);
 
-    // save refresh token in database
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
     await db.execute({
@@ -137,7 +197,7 @@ export default new Elysia()
 
     return {
       message: 'Login successful',
-      user: { username: user.username, email: user.email },
+      user: { username: user.username, email: user.email, role: user.role ?? null },
       accessToken,
       refreshToken,
     };

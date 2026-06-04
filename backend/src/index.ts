@@ -25,5 +25,8 @@ const app = new Elysia()
 
 console.log('Elysia server is running on http://localhost:3000');
 console.log("DB URL:", process.env.TURSO_DATABASE_URL);
+if (process.env.TESTING_MODE === 'true') {
+  console.log('TESTING_MODE is ON — email verification is disabled');
+}
 
 export default app;

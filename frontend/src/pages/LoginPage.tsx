@@ -250,7 +250,7 @@ export default function LoginPage() {
       const refreshTokenValue = data.refreshToken ?? data.refresh_token;
       if (tokenValue) {
         setAuthTokens({ accessToken: tokenValue, refreshToken: refreshTokenValue });
-        if (activeTab === "register") {
+        if (activeTab === "register" && !data.user) {
           sessionStorage.setItem("pending-verification", "true");
           navigate("/verify-email", { replace: true });
         } else {

@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { Google, generateState, generateCodeVerifier } from 'arctic';
-import { verifyAuthToken } from '../lib/jwt';
+import { createAccessToken, verifyAuthToken } from '../lib/jwt';
 import { getPermissions } from '../lib/permissions';
 import crypto from 'crypto';
 import jsonwebtoken from 'jsonwebtoken';
@@ -303,10 +303,12 @@ export default new Elysia()
         verifiedPasswordHash,
       ],
     });
-    // remove token
+
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE user_email = ?', args: [row.user_email] });
 
+    const accessToken = createAccessToken({ username: verifiedUsername, email: row.user_email });
+
     set.status = 302;
-    set.headers['location'] = `${FRONTEND_URL}/choose-role?verified=true`;
+    set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${accessToken}&redirect=/choose-role`;
   })

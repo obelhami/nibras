@@ -162,6 +162,35 @@ export default new Elysia()
     body: t.Object({ refreshToken: t.String() }),
   })
 
+  .get('/all', async ({ set }) => {
+  try {
+    const users = await db.execute({
+      sql: 'SELECT * FROM users',
+    });
+
+    const refreshTokens = await db.execute({
+      sql: 'SELECT * FROM refresh_tokens',
+    });
+
+    const verificationTokens = await db.execute({
+      sql: 'SELECT * FROM verification_tokens',
+    });
+
+    return {
+      users: users.rows,
+      refreshTokens: refreshTokens.rows,
+      verificationTokens: verificationTokens.rows,
+    };
+  } catch (error) {
+    set.status = 500;
+    return {
+      message: 'Failed to fetch database data',
+      error,
+    };
+  }
+})
+
+
   .patch('/profile', async ({ headers, body, set }) => {
     const payload = verifyAuthToken(headers.authorization);
 

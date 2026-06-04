@@ -16,8 +16,9 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (verified) {
       sessionStorage.removeItem('pending-verification')
+      clearAuthTokens()
       toast.success('Email verified. You can now log in.')
-      setSearchParams({}, { replace: true })
+      navigate('/', { replace: true })
       return
     }
 
@@ -31,7 +32,7 @@ export default function VerifyEmailPage() {
       toast.error('Verification link has expired. Please request a new one.')
       setSearchParams({}, { replace: true })
     }
-  }, [verified, error, setSearchParams])
+  }, [verified, error, navigate, setSearchParams])
 
   const handleResend = async () => {
     const token = getAccessToken()

@@ -47,12 +47,24 @@ export default new Elysia()
       return { message: 'Email already registered' };
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    await db.execute({
-      sql: 'DELETE FROM verification_tokens WHERE user_email = ?',
+    const pendingVerification = await db.execute({
+      sql: 'SELECT id, expires_at FROM verification_tokens WHERE user_email = ? ORDER BY id DESC LIMIT 1',
       args: [email],
     });
+
+    if (pendingVerification.rows.length > 0) {
+      const pending = pendingVerification.rows[0] as unknown as { id: number; expires_at: string };
+      if (new Date(pending.expires_at) > new Date()) {
+        set.status = 409;
+        return { message: 'A verification email has already been sent. Please check your inbox.' };
+      }
+      await db.execute({
+        sql: 'DELETE FROM verification_tokens WHERE user_email = ?',
+        args: [email],
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
@@ -231,7 +243,7 @@ export default new Elysia()
     }
 
     const result = await db.execute({
-      sql: 'SELECT username, email, password, picture, is_verified FROM users WHERE email = ?',
+      sql: 'SELECT username, email, password, picture, is_verified, role FROM users WHERE email = ?',
       args: [payload.email],
     });
 
@@ -241,6 +253,7 @@ export default new Elysia()
       password: string;
       picture: string | null;
       is_verified: number;
+      role: string | null;
     } | undefined;
 
     if (!user) {
@@ -314,6 +327,7 @@ export default new Elysia()
     const accessToken = createAccessToken({
       username: nextUsername,
       email: user.email,
+      role: user.role,
     });
 
     return {

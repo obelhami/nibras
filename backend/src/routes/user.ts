@@ -222,6 +222,32 @@ export default new Elysia()
     body: t.Object({ refreshToken: t.String() }),
   })
 
+  .get('/me', async ({ headers, set }) => {
+  const payload = verifyAuthToken(headers.authorization);
+
+  if (!payload) {
+    set.status = 401;
+    return { message: 'Unauthorized' };
+  }
+
+  const result = await db.execute({
+    sql: 'SELECT id, username, email, is_verified, role FROM users WHERE email = ?',
+    args: [payload.email],
+  });
+
+  const user = result.rows[0];
+
+  if (!user) {
+    set.status = 404;
+    return { message: 'User not found' };
+  }
+
+  return {
+    user,
+  };
+})
+
+
   .patch('/profile', async ({ headers, body, set }) => {
     const payload = verifyAuthToken(headers.authorization);
 

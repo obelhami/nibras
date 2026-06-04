@@ -5,6 +5,8 @@ import { db } from '../../db';
 import { createAccessToken, createRefreshToken, createVerificationToken, verifyAuthToken } from '../lib/jwt';
 import { sendVerificationEmail } from '../../email';
 
+const TESTING_MODE = process.env.TESTING_MODE === 'true';
+
 export default new Elysia()
   .get('/profile', ({ headers, set }) => {
     const payload = verifyAuthToken(headers.authorization);
@@ -47,24 +49,51 @@ export default new Elysia()
       return { message: 'Email already registered' };
     }
 
-    const pendingVerification = await db.execute({
-      sql: 'SELECT id, expires_at FROM verification_tokens WHERE user_email = ? ORDER BY id DESC LIMIT 1',
-      args: [email],
-    });
-
-    if (pendingVerification.rows.length > 0) {
-      const pending = pendingVerification.rows[0] as unknown as { id: number; expires_at: string };
-      if (new Date(pending.expires_at) > new Date()) {
-        set.status = 409;
-        return { message: 'A verification email has already been sent. Please check your inbox.' };
-      }
-      await db.execute({
-        sql: 'DELETE FROM verification_tokens WHERE user_email = ?',
+    if (!TESTING_MODE) {
+      const pendingVerification = await db.execute({
+        sql: 'SELECT id, expires_at FROM verification_tokens WHERE user_email = ? ORDER BY id DESC LIMIT 1',
         args: [email],
       });
+
+      if (pendingVerification.rows.length > 0) {
+        const pending = pendingVerification.rows[0] as unknown as { id: number; expires_at: string };
+        if (new Date(pending.expires_at) > new Date()) {
+          set.status = 409;
+          return { message: 'A verification email has already been sent. Please check your inbox.' };
+        }
+        await db.execute({
+          sql: 'DELETE FROM verification_tokens WHERE user_email = ?',
+          args: [email],
+        });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (TESTING_MODE) {
+      await db.execute({
+        sql: `INSERT INTO users (username, email, password, picture, is_verified)
+              VALUES (?, ?, ?, NULL, 1)`,
+        args: [username, email, hashedPassword],
+      });
+
+      const accessToken = createAccessToken({ username, email });
+      const refreshToken = createRefreshToken({ email });
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+      await db.execute({
+        sql: 'INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)',
+        args: [refreshToken, email, expiresAt.toISOString()],
+      });
+
+      return {
+        message: 'Registration successful',
+        accessToken,
+        refreshToken,
+        user: { username, email, role: null },
+      };
+    }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();

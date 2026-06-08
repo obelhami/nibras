@@ -35,7 +35,28 @@ async function initDB() {
             is_verified INTEGER NOT NULL DEFAULT 0
         )
     `);
-
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS teams (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            manager_id TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    `
+        );
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS team_members (
+            team_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            PRIMARY KEY (team_id, user_id),
+            FOREIGN KEY (team_id)
+                REFERENCES teams(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY (user_id)
+                REFERENCES users(id)
+                ON DELETE CASCADE)
+    `
+        );
     // refresh tokens
     await db.execute(`
         CREATE TABLE IF NOT EXISTS refresh_tokens (

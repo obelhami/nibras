@@ -49,6 +49,7 @@ export default new Elysia().post('/auth/refresh', async ({ body, set }) => {
     });
 
     const user = userResult.rows[0] as {
+      id: string;
       username: string;
       email: string;
       role: string | null;
@@ -60,7 +61,12 @@ export default new Elysia().post('/auth/refresh', async ({ body, set }) => {
     }
 
     // create new access token
-    const newAccessToken = createAccessToken(user);
+    const newAccessToken = createAccessToken({
+      id: user.email,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+    });
 
     return {
       message: 'Token refreshed successfully',

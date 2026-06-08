@@ -45,6 +45,98 @@ async function initDB() {
     `
         );
     await db.execute(`
+        CREATE TABLE IF NOT EXISTS boards (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'manual',
+            linked_project TEXT DEFAULT NULL,
+            visibility TEXT NOT NULL DEFAULT 'private',
+            team_id TEXT DEFAULT NULL,
+            owner_email TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS board_columns (
+            id TEXT PRIMARY KEY,
+            board_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id)
+                REFERENCES boards(id)
+                ON DELETE CASCADE,
+            UNIQUE(board_id, slug)
+        )
+    `);
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            board_id TEXT NOT NULL,
+            column_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            priority TEXT NOT NULL DEFAULT 'medium',
+            status_slug TEXT NOT NULL,
+            due_date TEXT DEFAULT NULL,
+            complexity INTEGER DEFAULT NULL,
+            assignee_email TEXT DEFAULT NULL,
+            created_by_email TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id)
+                REFERENCES boards(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY (column_id)
+                REFERENCES board_columns(id)
+                ON DELETE RESTRICT
+        )
+    `);
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS task_history (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            board_id TEXT NOT NULL,
+            from_column_id TEXT DEFAULT NULL,
+            to_column_id TEXT DEFAULT NULL,
+            from_status_slug TEXT DEFAULT NULL,
+            to_status_slug TEXT DEFAULT NULL,
+            moved_by_email TEXT NOT NULL,
+            note TEXT DEFAULT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id)
+                REFERENCES boards(id)
+                ON DELETE CASCADE
+        )
+    `);
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS board_metrics (
+            board_id TEXT PRIMARY KEY,
+            payload TEXT NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id)
+                REFERENCES boards(id)
+                ON DELETE CASCADE
+        )
+    `);
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS task_signals (
+            id TEXT PRIMARY KEY,
+            board_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            message TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id)
+                REFERENCES boards(id)
+                ON DELETE CASCADE
+        )
+    `);
+    await db.execute(`
         CREATE TABLE IF NOT EXISTS team_members (
             team_id TEXT NOT NULL,
             user_id TEXT NOT NULL,

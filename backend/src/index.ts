@@ -4,6 +4,7 @@ import { jwt } from '@elysiajs/jwt';
 import { swagger } from '@elysiajs/swagger';
 
 import authRoutes from './routes/auth';
+import boardRoutes from './routes/board';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
 
@@ -13,12 +14,13 @@ const app = new Elysia()
     origin: true,
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   }))
   .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET ?? 'dev-secret' }))
   .get('/', () => 'Hello World')
   .get('/api/hello', () => ({ message: 'Hello from Elysia Backend' }))
   .use(authRoutes)
+  .use(boardRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
   .listen(3000);

@@ -2,9 +2,9 @@ import jsonwebtoken from 'jsonwebtoken';
 
 const jwtSecret = process.env.JWT_SECRET ?? 'dev-secret-change-me';
 
-export const createAccessToken = (user: { username: string; email: string; role?: string | null }) =>
+export const createAccessToken = (user: { id?: string; username: string; email: string; role?: string | null }) =>
   jsonwebtoken.sign(
-    { email: user.email, username: user.username, ...(user.role ? { role: user.role } : {}) },
+    { ...(user.id ? { userId: user.id } : {}), email: user.email, username: user.username, ...(user.role ? { role: user.role } : {}) },
     jwtSecret,
     { expiresIn: '15m' }
   );
@@ -32,8 +32,10 @@ export const verifyAuthToken = (authorizationHeader: string | undefined) => {
 
   try {
     return jsonwebtoken.verify(token, jwtSecret) as {
+      userId?: string;
       email: string;
       username: string;
+      role?: string;
       purpose?: 'verification';
       iat: number;
       exp: number;

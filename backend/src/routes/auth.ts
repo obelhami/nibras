@@ -307,7 +307,7 @@ export default new Elysia()
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE token = ?', args: [token] });
     await db.execute({ sql: 'DELETE FROM verification_tokens WHERE user_email = ?', args: [row.user_email] });
 
-    const accessToken = createAccessToken({ username: verifiedUsername, email: row.user_email });
+    const accessToken = createAccessToken({ id: row.user_email, username: verifiedUsername, email: row.user_email });
 
     set.status = 302;
     set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${accessToken}&redirect=/choose-role`;

@@ -12,7 +12,7 @@ interface AuthenticatedUser {
 export async function requirePermission(
   authorizationHeader: string | undefined,
   action: Action,
-  set: { status: number },
+  set: { status?: number | string },
 ): Promise<AuthenticatedUser | null> {
   const payload = verifyAuthToken(authorizationHeader);
   if (!payload) {

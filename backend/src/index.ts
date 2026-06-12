@@ -5,6 +5,7 @@ import { swagger } from '@elysiajs/swagger';
 
 import authRoutes from './routes/auth';
 import boardRoutes from './routes/board';
+import projectRoutes from './routes/project';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
 
@@ -21,6 +22,7 @@ const app = new Elysia()
   .get('/api/hello', () => ({ message: 'Hello from Elysia Backend' }))
   .use(authRoutes)
   .use(boardRoutes)
+  .use(projectRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
   .listen(3000);

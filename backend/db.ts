@@ -160,6 +160,32 @@ async function initDB() {
         )
     `);
 
+    await db.execute(`
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+
+                created_by TEXT NOT NULL,
+                team_id TEXT,
+
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+    `);
+
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS project_teams (
+    project_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    PRIMARY KEY (project_id, team_id),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+);
+    `);
     // verification tokens
     await db.execute(`
         CREATE TABLE IF NOT EXISTS verification_tokens (

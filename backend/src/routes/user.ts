@@ -26,6 +26,7 @@ export default new Elysia()
   })
 
   .post('/register', async ({ body, set }) => {
+    console.log("im here at register endpoint with email:", body.email);
     const { username, email, password, confirmPassword } = body;
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

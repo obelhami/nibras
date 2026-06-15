@@ -143,3 +143,34 @@ export default new Elysia()
   }),
 })
 
+.get('/projects', async({ headers, set}) => {
+  const user = await requirePermission(headers.authorization,
+    'view_project',
+    set as unknown as {status:number},
+  )
+      if (!user) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+    // Check whether `updated_at` exists on the projects table (some DBs may be older)
+    const pragma = await db.execute({ sql: `PRAGMA table_info(projects)`, args: [] });
+    const cols = (pragma.rows as any[]).map((r: any) => r.name || r['name']);
+    const includeUpdated = cols.includes('updated_at');
+
+    const sql = `
+      SELECT
+        id,
+        name,
+        description,
+        start_date,
+        end_date,
+        status,
+        created_by,
+        created_at${includeUpdated ? ',\n        updated_at' : ''}
+      FROM projects
+    `;
+
+    const result = await db.execute({ sql, args: [] });
+    return { projects: result.rows };
+  
+  })

@@ -233,6 +233,15 @@ async function initDB() {
         // column already exists → ignore
     }
 
+    // Ensure `updated_at` exists on `projects` for older DBs
+    try {
+        await db.execute(`
+            ALTER TABLE projects ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
     console.log("✅ Database initialized successfully");
 }
 

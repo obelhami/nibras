@@ -16,6 +16,7 @@ type BoardRow = {
   title: string;
   source: string;
   linked_project: string | null;
+  linked_project_name: string | null;
   visibility: string;
   team_id: string | null;
   owner_email: string;
@@ -91,11 +92,25 @@ async function getCurrentUser(authorization: string | undefined): Promise<AuthUs
 
 async function getBoard(boardId: string) {
   const result = await db.execute({
-    sql: 'SELECT * FROM boards WHERE id = ?',
+    sql: `
+      SELECT boards.*, projects.name AS linked_project_name
+      FROM boards
+      LEFT JOIN projects ON projects.id = boards.linked_project
+      WHERE boards.id = ?
+    `,
     args: [boardId],
   });
 
   return result.rows[0] as BoardRow | undefined;
+}
+
+async function getProjectById(projectId: string) {
+  const result = await db.execute({
+    sql: 'SELECT id, name FROM projects WHERE id = ?',
+    args: [projectId],
+  });
+
+  return result.rows[0] as { id: string; name: string } | undefined;
 }
 
 async function getBoardColumns(boardId: string) {
@@ -331,9 +346,10 @@ export default new Elysia()
 
     const result = await db.execute({
       sql: `
-        SELECT DISTINCT boards.*
+        SELECT DISTINCT boards.*, projects.name AS linked_project_name
         FROM boards
         LEFT JOIN team_members ON team_members.team_id = boards.team_id AND team_members.user_id = ?
+        LEFT JOIN projects ON projects.id = boards.linked_project
         WHERE boards.owner_email = ?
           OR boards.visibility = 'public'
           OR team_members.user_id IS NOT NULL
@@ -392,6 +408,16 @@ export default new Elysia()
     const source = normalizeText(body.source) || 'manual';
     const linkedProject = normalizeText(body.linkedProject) || null;
     const teamId = normalizeText(body.teamId) || null;
+
+    let linkedProjectName: string | null = null;
+    if (linkedProject) {
+      const project = await getProjectById(linkedProject);
+      if (!project) {
+        set.status = 404;
+        return { message: 'Linked project not found' };
+      }
+      linkedProjectName = project.name;
+    }
 
     if (teamId) {
       const teamResult = await db.execute({
@@ -478,6 +504,7 @@ export default new Elysia()
         title,
         source,
         linkedProject,
+        linkedProjectName,
         visibility,
         teamId,
         ownerEmail: user.email,
@@ -563,8 +590,17 @@ export default new Elysia()
     }
 
     if (typeof body.linkedProject === 'string') {
+      const linkedProject = body.linkedProject.trim() || null;
+      if (linkedProject) {
+        const project = await getProjectById(linkedProject);
+        if (!project) {
+          set.status = 404;
+          return { message: 'Linked project not found' };
+        }
+      }
+
       updates.push('linked_project = ?');
-      values.push(body.linkedProject.trim() || null);
+      values.push(linkedProject);
     }
 
     if (typeof body.visibility === 'string') {

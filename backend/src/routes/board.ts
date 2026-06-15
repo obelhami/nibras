@@ -1227,4 +1227,36 @@ export default new Elysia()
     });
 
     return { history: result.rows };
+  })
+
+  .get('/tasks/:taskId/history', async ({ headers, params, set }) => {
+  const user = await getCurrentUser(headers.authorization);
+  if (!user) {
+    set.status = 401;
+    return { message: 'Unauthorized' };
+  }
+
+  const taskResult = await db.execute({
+    sql: 'SELECT board_id FROM tasks WHERE id = ?',
+    args: [params.taskId],
+  });
+
+  const task = taskResult.rows[0] as { board_id: string } | undefined;
+  if (!task) {
+    set.status = 404;
+    return { message: 'Task not found' };
+  }
+
+  const boardAccess = await getAccessibleBoard(task.board_id, user);
+  if ('error' in boardAccess) {
+    set.status = boardAccess.status;
+    return { message: boardAccess.error };
+  }
+
+  const result = await db.execute({
+    sql: 'SELECT * FROM task_history WHERE task_id = ? ORDER BY created_at DESC',
+    args: [params.taskId],
+  });
+
+  return { history: result.rows };
   });

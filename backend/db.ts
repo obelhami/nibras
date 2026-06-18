@@ -1,6 +1,5 @@
 import { createClient } from "@libsql/client";
 import "dotenv/config";
-
 /**
  * 🔥 HARD FAIL if env is missing (no fallback to local DB)
  */

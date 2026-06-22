@@ -7,8 +7,13 @@ import authRoutes from './routes/auth';
 import boardRoutes from './routes/board';
 import projectRoutes from './routes/project';
 import teamRoutes from './routes/teams';
+import taskRoutes from './routes/tasks';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
+import { runTasksMigrations } from './lib/migrations';
+
+// Tasks API polish migrations (task_assignees, task_comments, risk_score)
+runTasksMigrations().catch((err) => console.error('❌ Tasks migrations failed:', err));
 
 const app = new Elysia()
   .use(swagger({ path: '/docs' }))
@@ -25,6 +30,7 @@ const app = new Elysia()
   .use(boardRoutes)
   .use(projectRoutes)
   .use(teamRoutes)
+  .use(taskRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
   .listen(3000);

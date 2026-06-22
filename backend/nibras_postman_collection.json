@@ -1,0 +1,757 @@
+{
+  "info": {
+    "name": "Nibras - P0 Tests (Ilham)",
+    "description": "Tests automatisés pour Projects API et Teams & Members API.\n\nAvant de lancer :\n1. Lance le serveur : bun run index.ts\n2. Dans Postman, crée un Environment avec les variables : baseUrl = http://localhost:3000\n3. Lance les requêtes dans l'ordre (1 → 2 → ... → 26) car chaque test dépend du précédent.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" }
+  ],
+  "item": [
+    {
+      "name": "0. SETUP — Login + Assign Roles",
+      "item": [
+        {
+          "name": "01. Register managerA",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/register",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"managerA\",\n  \"email\": \"managera@test.com\",\n  \"password\": \"test123\",\n  \"confirmPassword\": \"test123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const json = pm.response.json();",
+            "if (pm.response.code === 200 && json.accessToken) {",
+            "  pm.collectionVariables.set('tokenA_temp', json.accessToken);",
+            "  console.log('managerA registered');",
+            "} else if (pm.response.code === 409) {",
+            "  console.log('managerA already exists, will login');",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "02. Login managerA",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"managera@test.com\",\n  \"password\": \"test123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Login managerA - 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.collectionVariables.set('tokenA_temp', json.accessToken);",
+            "console.log('managerA token (temp):', json.accessToken.substring(0, 30) + '...');"
+          ]}}]
+        },
+        {
+          "name": "03. Assign role manager to managerA",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA_temp}}" }
+            ],
+            "url": "{{baseUrl}}/user/role",
+            "body": { "mode": "raw", "raw": "{ \"role\": \"manager\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const json = pm.response.json();",
+            "if (pm.response.code === 200) {",
+            "  pm.collectionVariables.set('tokenA', json.accessToken);",
+            "  console.log('managerA role assigned');",
+            "} else if (pm.response.code === 409) {",
+            "  pm.collectionVariables.set('tokenA', pm.collectionVariables.get('tokenA_temp'));",
+            "  console.log('Role already assigned, using temp token');",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "04. Register managerB",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/register",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"managerB\",\n  \"email\": \"managerb@test.com\",\n  \"password\": \"test123\",\n  \"confirmPassword\": \"test123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const json = pm.response.json();",
+            "if (pm.response.code === 200 && json.accessToken) {",
+            "  pm.collectionVariables.set('tokenB_temp', json.accessToken);",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "05. Login managerB",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"managerb@test.com\",\n  \"password\": \"test123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Login managerB - 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.collectionVariables.set('tokenB_temp', json.accessToken);"
+          ]}}]
+        },
+        {
+          "name": "06. Assign role manager to managerB",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenB_temp}}" }
+            ],
+            "url": "{{baseUrl}}/user/role",
+            "body": { "mode": "raw", "raw": "{ \"role\": \"manager\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const json = pm.response.json();",
+            "if (pm.response.code === 200) {",
+            "  pm.collectionVariables.set('tokenB', json.accessToken);",
+            "} else if (pm.response.code === 409) {",
+            "  pm.collectionVariables.set('tokenB', pm.collectionVariables.get('tokenB_temp'));",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "07. Register admin1",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/register",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin1\",\n  \"email\": \"admin1@test.com\",\n  \"password\": \"test123\",\n  \"confirmPassword\": \"test123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const json = pm.response.json();",
+            "if (pm.response.code === 200 && json.accessToken) {",
+            "  pm.collectionVariables.set('tokenAdmin_temp', json.accessToken);",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "08. Login admin1",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin1@test.com\",\n  \"password\": \"test123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Login admin1 - 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.collectionVariables.set('tokenAdmin_temp', json.accessToken);"
+          ]}}]
+        },
+        {
+          "name": "09. Assign role admin to admin1",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin_temp}}" }
+            ],
+            "url": "{{baseUrl}}/user/role",
+            "body": { "mode": "raw", "raw": "{ \"role\": \"admin\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const json = pm.response.json();",
+            "if (pm.response.code === 200) {",
+            "  pm.collectionVariables.set('tokenAdmin', json.accessToken);",
+            "} else if (pm.response.code === 409) {",
+            "  pm.collectionVariables.set('tokenAdmin', pm.collectionVariables.get('tokenAdmin_temp'));",
+            "}"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "1. PROJECTS API — CRUD",
+      "item": [
+        {
+          "name": "10. [CRUD-Create] POST /projects — succès",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Projet Test Postman\",\n  \"status\": \"active\",\n  \"startDate\": \"2026-07-01\",\n  \"endDate\": \"2026-09-30\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Create] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('message = Project created successfully', () => pm.expect(json.message).to.eql('Project created successfully'));",
+            "pm.test('project.id existe', () => pm.expect(json.project.id).to.be.a('string'));",
+            "pm.test('project.name correct', () => pm.expect(json.project.name).to.eql('Projet Test Postman'));",
+            "pm.test('project.status = active', () => pm.expect(json.project.status).to.eql('active'));",
+            "pm.collectionVariables.set('projectId', json.project.id);",
+            "console.log('projectId sauvegardé:', json.project.id);"
+          ]}}]
+        },
+        {
+          "name": "11. [CRUD-Read] GET /projects/:id — succès",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": "{{baseUrl}}/projects/{{projectId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Read] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('project.id correspond', () => pm.expect(json.project.id).to.eql(pm.collectionVariables.get('projectId')));",
+            "pm.test('project.name correct', () => pm.expect(json.project.name).to.eql('Projet Test Postman'));"
+          ]}}]
+        },
+        {
+          "name": "12. [CRUD-Update] PATCH /projects/:id — succès",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects/{{projectId}}",
+            "body": { "mode": "raw", "raw": "{ \"status\": \"on_hold\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Update] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('statut mis à jour = on_hold', () => pm.expect(json.project.status).to.eql('on_hold'));"
+          ]}}]
+        },
+        {
+          "name": "13. [CRUD-Delete] DELETE /projects/:id par manager — 403",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": "{{baseUrl}}/projects/{{projectId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Delete manager] 403 Forbidden', () => pm.response.to.have.status(403));",
+            "const json = pm.response.json();",
+            "pm.test('code = FORBIDDEN', () => pm.expect(json.code).to.eql('FORBIDDEN'));"
+          ]}}]
+        },
+        {
+          "name": "14. [CRUD-Delete] DELETE /projects/:id par admin — 200",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/projects/{{projectId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Delete admin] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('message = Project deleted successfully', () => pm.expect(json.message).to.eql('Project deleted successfully'));"
+          ]}}]
+        },
+        {
+          "name": "15. [CRUD-Delete] GET /projects/:id après suppression — 404",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/projects/{{projectId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Delete] 404 après suppression', () => pm.response.to.have.status(404));",
+            "const json = pm.response.json();",
+            "pm.test('code = NOT_FOUND', () => pm.expect(json.code).to.eql('NOT_FOUND'));"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "2. PROJECTS API — Validate name/status/dates",
+      "item": [
+        {
+          "name": "16. [Validate-name] POST /projects nom vide — 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"\", \"status\": \"active\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Validate-name] 400 nom vide', () => pm.response.to.have.status(400));",
+            "const json = pm.response.json();",
+            "pm.test('code = VALIDATION_ERROR', () => pm.expect(json.code).to.eql('VALIDATION_ERROR'));",
+            "pm.test('message contient name', () => pm.expect(json.message.toLowerCase()).to.include('name'));"
+          ]}}]
+        },
+        {
+          "name": "17. [Validate-status] POST /projects statut invalide — 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"Test\", \"status\": \"invalid_status\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Validate-status] 400 statut invalide', () => pm.response.to.have.status(400));",
+            "const json = pm.response.json();",
+            "pm.test('code = VALIDATION_ERROR', () => pm.expect(json.code).to.eql('VALIDATION_ERROR'));",
+            "pm.test('message mentionne les statuts valides', () => pm.expect(json.message).to.include('active'));"
+          ]}}]
+        },
+        {
+          "name": "18. [Validate-dates] POST /projects startDate > endDate — 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Test dates\",\n  \"status\": \"active\",\n  \"startDate\": \"2026-09-30\",\n  \"endDate\": \"2026-06-01\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Validate-dates] 400 dates inversées', () => pm.response.to.have.status(400));",
+            "const json = pm.response.json();",
+            "pm.test('code = VALIDATION_ERROR', () => pm.expect(json.code).to.eql('VALIDATION_ERROR'));",
+            "pm.test('message parle de dates', () => pm.expect(json.message.toLowerCase()).to.include('date'));"
+          ]}}]
+        },
+        {
+          "name": "19. [Validate-dates] POST /projects date invalide — 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Test date invalide\",\n  \"status\": \"active\",\n  \"startDate\": \"pas-une-date\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Validate-dates] 400 format de date invalide', () => pm.response.to.have.status(400));",
+            "const json = pm.response.json();",
+            "pm.test('code = VALIDATION_ERROR', () => pm.expect(json.code).to.eql('VALIDATION_ERROR'));"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "3. PROJECTS API — Filter + Pagination",
+      "item": [
+        {
+          "name": "20. [Filter] Créer projet pour les tests filter/pagination",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"Projet Pagination Test\", \"status\": \"active\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Création projet filter/pagination - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.collectionVariables.set('projectIdFilter', json.project.id);"
+          ]}}]
+        },
+        {
+          "name": "21. [Filter] GET /projects?status=active — liste filtrée",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/projects?status=active",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"],
+              "query": [{ "key": "status", "value": "active" }]
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Filter] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('tous les projets sont active', () => {",
+            "  json.projects.forEach(p => pm.expect(p.status).to.eql('active'));",
+            "});",
+            "pm.test('pagination présente', () => pm.expect(json.pagination).to.exist);"
+          ]}}]
+        },
+        {
+          "name": "22. [Filter] GET /projects?status=invalide — 400",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/projects?status=invalide",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"],
+              "query": [{ "key": "status", "value": "invalide" }]
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Filter] 400 statut invalide en query', () => pm.response.to.have.status(400));",
+            "const json = pm.response.json();",
+            "pm.test('code = VALIDATION_ERROR', () => pm.expect(json.code).to.eql('VALIDATION_ERROR'));"
+          ]}}]
+        },
+        {
+          "name": "23. [Pagination] GET /projects?page=1&limit=2",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/projects?page=1&limit=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "2" }
+              ]
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Pagination] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('max 2 projets retournés', () => pm.expect(json.projects.length).to.be.at.most(2));",
+            "pm.test('pagination.page = 1', () => pm.expect(json.pagination.page).to.eql(1));",
+            "pm.test('pagination.limit = 2', () => pm.expect(json.pagination.limit).to.eql(2));",
+            "pm.test('pagination.total existe', () => pm.expect(json.pagination.total).to.be.a('number'));",
+            "pm.test('pagination.totalPages cohérent', () => {",
+            "  const expected = Math.ceil(json.pagination.total / 2);",
+            "  pm.expect(json.pagination.totalPages).to.eql(expected);",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "4. PROJECTS API — Manager/admin control",
+      "item": [
+        {
+          "name": "24. [Scope] Recréer un projet managerA pour tests scope",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/projects",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"Projet Scope Test\", \"status\": \"active\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Création projet scope - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.collectionVariables.set('projectIdScope', json.project.id);"
+          ]}}]
+        },
+        {
+          "name": "25. [Scope] GET /projects par managerB — projet managerA absent",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenB}}" }],
+            "url": "{{baseUrl}}/projects"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Scope] GET /projects managerB - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "const scopeId = pm.collectionVariables.get('projectIdScope');",
+            "const found = json.projects.find(p => p.id === scopeId);",
+            "pm.test('[Scope] projet de managerA absent pour managerB', () => pm.expect(found).to.be.undefined);"
+          ]}}]
+        },
+        {
+          "name": "26. [Scope] GET /projects/:id par managerB — 403",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenB}}" }],
+            "url": "{{baseUrl}}/projects/{{projectIdScope}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Scope] GET projet managerA par managerB - 403', () => pm.response.to.have.status(403));",
+            "const json = pm.response.json();",
+            "pm.test('code = FORBIDDEN', () => pm.expect(json.code).to.eql('FORBIDDEN'));"
+          ]}}]
+        },
+        {
+          "name": "27. [Scope] GET /projects par admin — voit tout",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/projects"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Scope] GET /projects admin - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "const scopeId = pm.collectionVariables.get('projectIdScope');",
+            "const found = json.projects.find(p => p.id === scopeId);",
+            "pm.test('[Scope] admin voit le projet de managerA', () => pm.expect(found).to.not.be.undefined);"
+          ]}}]
+        },
+        {
+          "name": "28. [Scope] DELETE /projects/:id par admin — 200",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/projects/{{projectIdScope}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Scope] DELETE par admin - 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "5. TEAMS API — CRUD",
+      "item": [
+        {
+          "name": "29. [CRUD-Create] POST /teams — succès",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/teams",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"Team Postman\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Create] POST /teams - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('message = Team created successfully', () => pm.expect(json.message).to.eql('Team created successfully'));",
+            "pm.test('team.id existe', () => pm.expect(json.team.id).to.be.a('string'));",
+            "pm.test('team.name correct', () => pm.expect(json.team.name).to.eql('Team Postman'));",
+            "pm.collectionVariables.set('teamId', json.team.id);",
+            "console.log('teamId sauvegardé:', json.team.id);"
+          ]}}]
+        },
+        {
+          "name": "30. [CRUD-Read] GET /teams/:id — succès + membres vides",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": "{{baseUrl}}/teams/{{teamId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Read] GET /teams/:id - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('team.id correspond', () => pm.expect(json.team.id).to.eql(pm.collectionVariables.get('teamId')));",
+            "pm.test('members est un tableau', () => pm.expect(json.members).to.be.an('array'));",
+            "pm.test('members est vide', () => pm.expect(json.members.length).to.eql(0));"
+          ]}}]
+        },
+        {
+          "name": "31. [CRUD-Update] PATCH /teams/:id — succès",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/teams/{{teamId}}",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"Team Postman Renamed\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Update] PATCH /teams/:id - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('nom mis à jour', () => pm.expect(json.team.name).to.eql('Team Postman Renamed'));"
+          ]}}]
+        },
+        {
+          "name": "32. [CRUD-Delete] DELETE /teams/:id par non-manager — 403",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenB}}" }],
+            "url": "{{baseUrl}}/teams/{{teamId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[CRUD-Delete] DELETE par non-manager - 403', () => pm.response.to.have.status(403));",
+            "const json = pm.response.json();",
+            "pm.test('code = FORBIDDEN', () => pm.expect(json.code).to.eql('FORBIDDEN'));"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "6. TEAMS API — Add/Remove member + Prevent duplicates",
+      "item": [
+        {
+          "name": "33. [Add-member] POST /teams/:id/members — succès",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/teams/{{teamId}}/members",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"managerb@test.com\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Add-member] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('message = Member added successfully', () => pm.expect(json.message).to.eql('Member added successfully'));"
+          ]}}]
+        },
+        {
+          "name": "34. [Prevent-duplicates] POST /teams/:id/members doublon — 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/teams/{{teamId}}/members",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"managerb@test.com\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Prevent-duplicates] 409 doublon', () => pm.response.to.have.status(409));",
+            "const json = pm.response.json();",
+            "pm.test('code = CONFLICT', () => pm.expect(json.code).to.eql('CONFLICT'));"
+          ]}}]
+        },
+        {
+          "name": "35. [List-members] GET /teams/:id/members — managerB visible",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": "{{baseUrl}}/teams/{{teamId}}/members"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[List-members] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('members est un tableau non vide', () => pm.expect(json.members.length).to.be.above(0));",
+            "const memberB = json.members.find(m => m.email === 'managerb@test.com');",
+            "pm.test('managerB est dans la liste', () => pm.expect(memberB).to.not.be.undefined);",
+            "if (memberB) pm.collectionVariables.set('memberBId', String(memberB.id));"
+          ]}}]
+        },
+        {
+          "name": "36. [Remove-member] DELETE /teams/:id/members/:userId — succès",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": "{{baseUrl}}/teams/{{teamId}}/members/{{memberBId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Remove-member] 200 OK', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('message = Member removed successfully', () => pm.expect(json.message).to.eql('Member removed successfully'));"
+          ]}}]
+        },
+        {
+          "name": "37. [Add-member] Utilisateur inexistant — 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenA}}" }
+            ],
+            "url": "{{baseUrl}}/teams/{{teamId}}/members",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"inexistant@test.com\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[Add-member] email inexistant - 404', () => pm.response.to.have.status(404));",
+            "const json = pm.response.json();",
+            "pm.test('code = NOT_FOUND', () => pm.expect(json.code).to.eql('NOT_FOUND'));"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "7. TEAMS API — manager_id control",
+      "item": [
+        {
+          "name": "38. [manager_id] PATCH /teams/:id par non-manager — 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenB}}" }
+            ],
+            "url": "{{baseUrl}}/teams/{{teamId}}",
+            "body": { "mode": "raw", "raw": "{ \"name\": \"Hack\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[manager_id] PATCH par non-manager - 403', () => pm.response.to.have.status(403));",
+            "const json = pm.response.json();",
+            "pm.test('code = FORBIDDEN', () => pm.expect(json.code).to.eql('FORBIDDEN'));"
+          ]}}]
+        },
+        {
+          "name": "39. [manager_id] POST /teams/:id/members par non-manager — 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{tokenB}}" }
+            ],
+            "url": "{{baseUrl}}/teams/{{teamId}}/members",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"admin1@test.com\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[manager_id] Add member par non-manager - 403', () => pm.response.to.have.status(403));",
+            "const json = pm.response.json();",
+            "pm.test('code = FORBIDDEN', () => pm.expect(json.code).to.eql('FORBIDDEN'));"
+          ]}}]
+        },
+        {
+          "name": "40. [manager_id] GET /teams par managerB — team absente",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenB}}" }],
+            "url": "{{baseUrl}}/teams"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[manager_id] GET /teams managerB - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "const teamId = pm.collectionVariables.get('teamId');",
+            "const found = json.teams.find(t => t.id === teamId);",
+            "pm.test('[manager_id] team de managerA absente pour managerB', () => pm.expect(found).to.be.undefined);"
+          ]}}]
+        },
+        {
+          "name": "41. [manager_id] GET /teams/:id par non-membre — 403",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenB}}" }],
+            "url": "{{baseUrl}}/teams/{{teamId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[manager_id] GET /teams/:id par non-membre - 403', () => pm.response.to.have.status(403));",
+            "const json = pm.response.json();",
+            "pm.test('code = FORBIDDEN', () => pm.expect(json.code).to.eql('FORBIDDEN'));"
+          ]}}]
+        },
+        {
+          "name": "42. [manager_id] DELETE /teams/:id par manager propriétaire — 200",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenA}}" }],
+            "url": "{{baseUrl}}/teams/{{teamId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('[manager_id] DELETE par manager propriétaire - 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('message = Team deleted successfully', () => pm.expect(json.message).to.eql('Team deleted successfully'));"
+          ]}}]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "tokenA", "value": "" },
+    { "key": "tokenA_temp", "value": "" },
+    { "key": "tokenB", "value": "" },
+    { "key": "tokenB_temp", "value": "" },
+    { "key": "tokenAdmin", "value": "" },
+    { "key": "tokenAdmin_temp", "value": "" },
+    { "key": "projectId", "value": "" },
+    { "key": "projectIdFilter", "value": "" },
+    { "key": "projectIdScope", "value": "" },
+    { "key": "teamId", "value": "" },
+    { "key": "memberBId", "value": "" }
+  ]
+}

@@ -8,6 +8,7 @@ import boardRoutes from './routes/board';
 import projectRoutes from './routes/project';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
+import kpiRoutes from './routes/kpi';
 
 const app = new Elysia()
   .use(swagger({ path: '/docs' }))
@@ -25,6 +26,7 @@ const app = new Elysia()
   .use(projectRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
+  .use(kpiRoutes)
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');

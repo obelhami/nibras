@@ -136,6 +136,33 @@ async function initDB() {
                 ON DELETE CASCADE
         )
     `);
+    // KPI ENGINE (Module 6)
+    // Append-only store of every computed KPI run (Store KPI step of the flow).
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS kpi_snapshots (
+            id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL,            -- 'board' | 'team' | 'user'
+            scope_id TEXT NOT NULL,         -- board id / team id / user email
+            kpi_type TEXT NOT NULL,         -- 'operational' | 'focus_score' | 'team_pulse'
+            payload TEXT NOT NULL,          -- JSON metrics snapshot
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    // History of task re-assignments — feeds the Focus Score "excessive reassignment" indicator.
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS task_assignment_history (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            board_id TEXT NOT NULL,
+            from_email TEXT DEFAULT NULL,
+            to_email TEXT DEFAULT NULL,
+            changed_by_email TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id)
+                REFERENCES boards(id)
+                ON DELETE CASCADE
+        )
+    `);
     await db.execute(`
         CREATE TABLE IF NOT EXISTS team_members (
             team_id TEXT NOT NULL,

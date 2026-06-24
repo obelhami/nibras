@@ -340,27 +340,35 @@ describe('Complexity validation — Tasks API', () => {
   });
 });
 
-// ─── Email format validation (Assignees) ─────────────────────────────────────
+// ─── userId validation — Assignees ───────────────────────────────────────────
 
-describe('Email format validation — Assignees', () => {
-  function isValidEmail(email: string): boolean {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  }
-
-  test('emails valides → acceptés', () => {
-    expect(isValidEmail('dev1@nibras.demo')).toBe(true);
-    expect(isValidEmail('manager@nibras.demo')).toBe(true);
-    expect(isValidEmail('user.name+tag@example.co.ma')).toBe(true);
+describe('userId validation — Assignees', () => {
+    function isValidUserId(userId: string): boolean {
+      const n = Number(userId);
+      return userId.trim() !== '' && !isNaN(n) && n > 0;
+    }
+  
+    test('userId numérique valide → accepté', () => {
+      expect(isValidUserId('63')).toBe(true);
+      expect(isValidUserId('1')).toBe(true);
+      expect(isValidUserId('999')).toBe(true);
+    });
+  
+    test('userId vide → invalide', () => {
+      expect(isValidUserId('')).toBe(false);
+      expect(isValidUserId('  ')).toBe(false);
+    });
+  
+    test('userId non numérique → invalide', () => {
+      expect(isValidUserId('abc')).toBe(false);
+      expect(isValidUserId('dev1@nibras.demo')).toBe(false);
+    });
+  
+    test('userId négatif ou zéro → invalide', () => {
+      expect(isValidUserId('0')).toBe(false);
+      expect(isValidUserId('-1')).toBe(false);
+    });
   });
-
-  test('emails invalides → rejetés', () => {
-    expect(isValidEmail('')).toBe(false);
-    expect(isValidEmail('pas-un-email')).toBe(false);
-    expect(isValidEmail('@nibras.demo')).toBe(false);
-    expect(isValidEmail('user@')).toBe(false);
-    expect(isValidEmail('user @nibras.demo')).toBe(false);
-  });
-});
 
 // ─── Close task — tous les statuts source ────────────────────────────────────
 

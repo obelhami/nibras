@@ -97,7 +97,7 @@ describe('Validate dates', () => {
   });
 });
 
-// ─── Manager/admin control ────────────────────────────────────────────────────
+// ─── Manager/admin control (canAccessProject logic) ──────────────────────────
 
 describe('Manager/admin control — canAccessProject logic', () => {
   function canAccessProjectSync(
@@ -514,6 +514,122 @@ describe('Error codes format — Validation & Errors Standard', () => {
     expect(httpCodes['VALIDATION_ERROR']).toBe(400);
     expect(httpCodes['CONFLICT']).toBe(409);
     expect(httpCodes['INTERNAL_ERROR']).toBe(500);
+  });
+});
+
+// ─── Role check — création de team ───────────────────────────────────────────
+
+describe('Role check — création de team', () => {
+  function canCreateTeam(role: string): boolean {
+    return role === 'manager' || role === 'admin';
+  }
+
+  test('manager → peut créer une team', () => {
+    expect(canCreateTeam('manager')).toBe(true);
+  });
+
+  test('admin → peut créer une team', () => {
+    expect(canCreateTeam('admin')).toBe(true);
+  });
+
+  test('developer → ne peut pas créer une team', () => {
+    expect(canCreateTeam('developer')).toBe(false);
+  });
+
+  test('rôle null/inconnu → ne peut pas créer une team', () => {
+    expect(canCreateTeam('')).toBe(false);
+    expect(canCreateTeam('guest')).toBe(false);
+  });
+});
+
+// ─── PATCH project — status par défaut ───────────────────────────────────────
+
+describe('PATCH project — status non modifié garde la valeur existante', () => {
+  function resolveNextStatus(
+    bodyStatus: string | undefined,
+    dbStatus: string,
+    allowedStatuses: string[],
+  ): { status: string; valid: boolean } {
+    if (typeof bodyStatus === 'undefined') return { status: dbStatus, valid: true };
+    return { status: bodyStatus, valid: allowedStatuses.includes(bodyStatus) };
+  }
+
+  const ALLOWED = ['active', 'on_hold', 'completed', 'archived'];
+
+  test('status non fourni → garde le status de la base', () => {
+    const result = resolveNextStatus(undefined, 'on_hold', ALLOWED);
+    expect(result.status).toBe('on_hold');
+    expect(result.valid).toBe(true);
+  });
+
+  test('status fourni valide → mis à jour', () => {
+    const result = resolveNextStatus('archived', 'active', ALLOWED);
+    expect(result.status).toBe('archived');
+    expect(result.valid).toBe(true);
+  });
+
+  test('status fourni invalide → rejeté', () => {
+    const result = resolveNextStatus('blabla', 'active', ALLOWED);
+    expect(result.valid).toBe(false);
+  });
+});
+
+// ─── riskScore — type entier ──────────────────────────────────────────────────
+
+describe('riskScore — validation type entier', () => {
+  function isValidRiskScoreStrict(value: number | null): boolean {
+    if (value === null) return true;
+    return Number.isInteger(value) && value >= 0 && value <= 100;
+  }
+
+  test('entier valide → accepté', () => {
+    expect(isValidRiskScoreStrict(0)).toBe(true);
+    expect(isValidRiskScoreStrict(50)).toBe(true);
+    expect(isValidRiskScoreStrict(100)).toBe(true);
+  });
+
+  test('décimal → invalide même dans la plage 0-100', () => {
+    expect(isValidRiskScoreStrict(75.5)).toBe(false);
+    expect(isValidRiskScoreStrict(0.1)).toBe(false);
+    expect(isValidRiskScoreStrict(99.9)).toBe(false);
+  });
+
+  test('null → valide (reset)', () => {
+    expect(isValidRiskScoreStrict(null)).toBe(true);
+  });
+});
+
+// ─── assignee_email legacy sync ───────────────────────────────────────────────
+
+describe('assignee_email legacy — sync après suppression du dernier assigné', () => {
+  function resolveAssigneeEmailAfterRemove(
+    removedEmail: string,
+    currentAssigneeEmail: string | null,
+    remainingAssignees: string[],
+  ): string | null {
+    if (currentAssigneeEmail !== removedEmail) return currentAssigneeEmail;
+    return remainingAssignees.length > 0 ? (remainingAssignees[0] as string) : null;
+  }
+
+  test('retirer le primary assignee → email passe au suivant', () => {
+    const result = resolveAssigneeEmailAfterRemove(
+      'dev1@nibras.demo', 'dev1@nibras.demo', ['dev2@nibras.demo'],
+    );
+    expect(result).toBe('dev2@nibras.demo');
+  });
+
+  test('retirer le dernier assigné → assignee_email = null', () => {
+    const result = resolveAssigneeEmailAfterRemove(
+      'dev1@nibras.demo', 'dev1@nibras.demo', [],
+    );
+    expect(result).toBeNull();
+  });
+
+  test('retirer un assigné non primary → assignee_email inchangé', () => {
+    const result = resolveAssigneeEmailAfterRemove(
+      'dev2@nibras.demo', 'dev1@nibras.demo', ['dev1@nibras.demo'],
+    );
+    expect(result).toBe('dev1@nibras.demo');
   });
 });
 

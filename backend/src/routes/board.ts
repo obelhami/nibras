@@ -681,6 +681,8 @@ export default new Elysia()
 
     await db.execute({ sql: 'DELETE FROM task_signals WHERE board_id = ?', args: [params.boardId] });
     await db.execute({ sql: 'DELETE FROM board_metrics WHERE board_id = ?', args: [params.boardId] });
+    await db.execute({ sql: 'DELETE FROM task_assignment_history WHERE board_id = ?', args: [params.boardId] });
+    await db.execute({ sql: "DELETE FROM kpi_snapshots WHERE scope = 'board' AND scope_id = ?", args: [params.boardId] });
     await db.execute({ sql: 'DELETE FROM task_history WHERE board_id = ?', args: [params.boardId] });
     await db.execute({ sql: 'DELETE FROM tasks WHERE board_id = ?', args: [params.boardId] });
     await db.execute({ sql: 'DELETE FROM board_columns WHERE board_id = ?', args: [params.boardId] });
@@ -1070,8 +1072,28 @@ export default new Elysia()
     }
 
     if (typeof body.assigneeEmail === 'string') {
+      const nextAssignee = body.assigneeEmail.trim() || null;
+
+      // Log the change so the KPI Focus Score can measure reassignment.
+      if (nextAssignee !== task.assignee_email) {
+        await db.execute({
+          sql: `
+            INSERT INTO task_assignment_history (id, task_id, board_id, from_email, to_email, changed_by_email)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          args: [
+            crypto.randomUUID(),
+            params.taskId,
+            params.boardId,
+            task.assignee_email,
+            nextAssignee,
+            user.email,
+          ],
+        });
+      }
+
       updates.push('assignee_email = ?');
-      values.push(body.assigneeEmail.trim() || null);
+      values.push(nextAssignee);
     }
 
     if (updates.length === 0) {

@@ -29,6 +29,10 @@ function serializeTeam(row: TeamRow) {
   };
 }
 
+// Authentifie le token et recharge l'utilisateur depuis la base (pour
+// avoir son role à jour). Pas de système de permission ici : lib/permissions.ts
+// (Omar - RBAC) ne définit aucune action team, donc le contrôle de rôle
+// se fait directement dans ce fichier.
 async function getAuthenticatedUser(authorization: string | undefined): Promise<AuthUser | null> {
   const payload = verifyAuthToken(authorization);
   if (!payload) return null;
@@ -52,7 +56,8 @@ async function getTeamById(teamId: string) {
   return result.rows[0] as unknown as TeamRow | undefined;
 }
 
-// manager_id control
+// manager_id control : seul le manager qui possède la team (manager_id)
+// ou un admin peut la modifier / gérer ses membres.
 function isTeamManager(team: TeamRow, user: AuthUser): boolean {
   return user.role === 'admin' || String(team.manager_id) === String(user.id);
 }
@@ -84,7 +89,8 @@ export default new Elysia()
     if (!name) return validationError(set, 'Team name is required');
 
     const teamId = crypto.randomUUID();
-    // manager_id control
+    // manager_id control : par défaut le créateur devient manager de la
+    // team ; un admin peut explicitement désigner un autre manager.
     const managerId = user.role === 'admin' && typeof body.managerId === 'string'
       ? body.managerId
       : String(user.id);
@@ -110,13 +116,13 @@ export default new Elysia()
     const user = await getAuthenticatedUser(headers.authorization);
     if (!user) return unauthorized(set);
 
-    // Pagination
     const { page, limit, offset } = parsePagination(query);
 
     let whereClause = '';
     const args: Array<string | number> = [];
 
-    // manager_id control
+    // manager_id control : admin voit tout, sinon uniquement les teams
+    // managées par l'utilisateur ou dont il est membre.
     if (user.role !== 'admin') {
       whereClause = `
         WHERE t.manager_id = ?
@@ -131,7 +137,6 @@ export default new Elysia()
     });
     const total = Number((countResult.rows[0] as unknown as { total: number | string }).total ?? 0);
 
-    // Pagination
     const listResult = await db.execute({
       sql: `
         SELECT t.* FROM teams t
@@ -272,11 +277,11 @@ export default new Elysia()
       return forbidden(set, 'Only the team manager or an admin can add members');
     }
 
-    const email = normalizeText(body.email);
-    if (!email) return validationError(set, 'email is required');
+    const userId = normalizeText(body.userId);
+    if (!userId) return validationError(set, 'userId is required');
 
-    const memberResult = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [email] });
-    const member = memberResult.rows[0] as { id: string | number } | undefined;
+    const memberResult = await db.execute({ sql: 'SELECT id, email FROM users WHERE id = ?', args: [userId] });
+    const member = memberResult.rows[0] as { id: string | number; email: string } | undefined;
     if (!member) return notFound(set, 'User not found');
 
     try {
@@ -285,7 +290,7 @@ export default new Elysia()
         args: [params.teamId, String(member.id)],
       });
     } catch (error: any) {
-      // Prevent duplicates
+      // Prevent duplicates : violation de la clé primaire composite
       if (error?.message?.includes('PRIMARY') || error?.message?.includes('UNIQUE')) {
         return conflict(set, 'User is already a member of this team');
       }
@@ -295,7 +300,7 @@ export default new Elysia()
     return { message: 'Member added successfully' };
   }, {
     body: t.Object({
-      email: t.String({ format: 'email' }),
+      userId: t.String(),
     }),
   })
 

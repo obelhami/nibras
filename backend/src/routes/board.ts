@@ -873,22 +873,6 @@ export default new Elysia()
     return { message: 'Column deleted successfully' };
   })
 
-  .get('/boards/:boardId/tasks', async ({ headers, params, set }) => {
-    const user = await getCurrentUser(headers.authorization);
-    if (!user) {
-      set.status = 401;
-      return { message: 'Unauthorized' };
-    }
-
-    const boardAccess = await getAccessibleBoard(params.boardId, user);
-    if ('error' in boardAccess) {
-      set.status = boardAccess.status;
-      return { message: boardAccess.error };
-    }
-
-    const tasks = await getBoardTasks(params.boardId);
-    return { tasks };
-  })
 
   .post('/boards/:boardId/tasks', async ({ headers, params, body, set }) => {
     const user = await getCurrentUser(headers.authorization);

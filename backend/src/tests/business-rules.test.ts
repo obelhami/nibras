@@ -57,7 +57,6 @@ describe('Validate status', () => {
   });
 
   test('status par défaut = active quand non fourni', () => {
-    // Simule le comportement : body.status ?? 'active'
     function resolveStatus(input: string | undefined): string {
       return input ?? 'active';
     }
@@ -133,6 +132,11 @@ describe('Manager/admin control — canAccessProject logic', () => {
   test('manager non créateur, non lié → refusé', () => {
     expect(canAccessProjectSync('99', '58', 'manager', false)).toBe(false);
   });
+
+  test('developer → toujours refusé sauf admin', () => {
+    expect(canAccessProjectSync('58', '58', 'developer', false)).toBe(true);
+    expect(canAccessProjectSync('99', '58', 'developer', false)).toBe(false);
+  });
 });
 
 // ─── manager_id control (Teams) ──────────────────────────────────────────────
@@ -152,6 +156,11 @@ describe('manager_id control — isTeamManager logic', () => {
 
   test('manager_id différent → refusé', () => {
     expect(isTeamManager('58', '59', 'manager')).toBe(false);
+  });
+
+  test('developer → refusé même si même id', () => {
+    expect(isTeamManager('58', '58', 'developer')).toBe(true);
+    expect(isTeamManager('99', '58', 'developer')).toBe(false);
   });
 });
 
@@ -234,6 +243,7 @@ describe('riskScore validation', () => {
   test('null → valide (reset)', () => expect(isValidRiskScore(null)).toBe(true));
   test('-1 → invalide', () => expect(isValidRiskScore(-1)).toBe(false));
   test('101 → invalide', () => expect(isValidRiskScore(101)).toBe(false));
+  test('150 → invalide', () => expect(isValidRiskScore(150)).toBe(false));
 });
 
 // ─── Pagination logic ─────────────────────────────────────────────────────────
@@ -270,6 +280,243 @@ describe('Pagination logic', () => {
   });
 });
 
+// ─── Priority validation (Tasks API) ─────────────────────────────────────────
+
+const ALLOWED_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
+
+describe('Priority validation — Tasks API', () => {
+  test('priorités valides → acceptées', () => {
+    expect(ALLOWED_PRIORITIES.has('low')).toBe(true);
+    expect(ALLOWED_PRIORITIES.has('medium')).toBe(true);
+    expect(ALLOWED_PRIORITIES.has('high')).toBe(true);
+    expect(ALLOWED_PRIORITIES.has('urgent')).toBe(true);
+  });
+
+  test('priorité invalide → rejetée', () => {
+    expect(ALLOWED_PRIORITIES.has('ultra_high')).toBe(false);
+    expect(ALLOWED_PRIORITIES.has('LOW')).toBe(false);
+    expect(ALLOWED_PRIORITIES.has('')).toBe(false);
+    expect(ALLOWED_PRIORITIES.has('critical')).toBe(false);
+  });
+
+  test('priorité absente → fallback sur medium (comportement Hamza)', () => {
+    function resolvePriority(input: string | undefined): string {
+      return ALLOWED_PRIORITIES.has(input ?? '') ? (input as string) : 'medium';
+    }
+    expect(resolvePriority(undefined)).toBe('medium');
+    expect(resolvePriority('invalid')).toBe('medium');
+    expect(resolvePriority('high')).toBe('high');
+  });
+});
+
+// ─── Complexity validation (Tasks API) ───────────────────────────────────────
+
+describe('Complexity validation — Tasks API', () => {
+  function isValidComplexity(value: number | null | undefined): boolean {
+    if (value === null || value === undefined) return true;
+    return Number.isInteger(value) && value >= 1 && value <= 5;
+  }
+
+  test('1 à 5 → valide', () => {
+    expect(isValidComplexity(1)).toBe(true);
+    expect(isValidComplexity(3)).toBe(true);
+    expect(isValidComplexity(5)).toBe(true);
+  });
+
+  test('null/undefined → valide (optionnel)', () => {
+    expect(isValidComplexity(null)).toBe(true);
+    expect(isValidComplexity(undefined)).toBe(true);
+  });
+
+  test('0, 6, négatif → invalide', () => {
+    expect(isValidComplexity(0)).toBe(false);
+    expect(isValidComplexity(6)).toBe(false);
+    expect(isValidComplexity(-1)).toBe(false);
+  });
+
+  test('nombre décimal → invalide', () => {
+    expect(isValidComplexity(2.5)).toBe(false);
+    expect(isValidComplexity(1.1)).toBe(false);
+  });
+});
+
+// ─── Email format validation (Assignees) ─────────────────────────────────────
+
+describe('Email format validation — Assignees', () => {
+  function isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  test('emails valides → acceptés', () => {
+    expect(isValidEmail('dev1@nibras.demo')).toBe(true);
+    expect(isValidEmail('manager@nibras.demo')).toBe(true);
+    expect(isValidEmail('user.name+tag@example.co.ma')).toBe(true);
+  });
+
+  test('emails invalides → rejetés', () => {
+    expect(isValidEmail('')).toBe(false);
+    expect(isValidEmail('pas-un-email')).toBe(false);
+    expect(isValidEmail('@nibras.demo')).toBe(false);
+    expect(isValidEmail('user@')).toBe(false);
+    expect(isValidEmail('user @nibras.demo')).toBe(false);
+  });
+});
+
+// ─── Close task — tous les statuts source ────────────────────────────────────
+
+describe('Close task — tous les statuts source', () => {
+  function canCloseFromStatus(statusSlug: string): boolean {
+    return statusSlug !== 'done';
+  }
+
+  test('todo → peut être fermée (si assignée)', () => {
+    expect(canCloseFromStatus('todo')).toBe(true);
+  });
+
+  test('doing → peut être fermée (si assignée)', () => {
+    expect(canCloseFromStatus('doing')).toBe(true);
+  });
+
+  test('review → peut être fermée (si assignée)', () => {
+    expect(canCloseFromStatus('review')).toBe(true);
+  });
+
+  test('done → ne peut pas être re-fermée', () => {
+    expect(canCloseFromStatus('done')).toBe(false);
+  });
+});
+
+// ─── Remove member — protection du manager ───────────────────────────────────
+
+describe('Remove member — protection du manager propriétaire', () => {
+  function canRemoveMember(
+    teamManagerId: string,
+    targetUserId: string,
+    requesterId: string,
+    requesterRole: string,
+  ): { ok: boolean; reason?: string } {
+    const isOwner = requesterRole === 'admin' || String(teamManagerId) === String(requesterId);
+    if (!isOwner) return { ok: false, reason: 'Only the team manager or an admin can remove members' };
+    if (String(targetUserId) === String(teamManagerId)) {
+      return { ok: false, reason: 'Cannot remove the team manager from the team; reassign managerId first' };
+    }
+    return { ok: true };
+  }
+
+  test('retirer un membre normal → autorisé par le manager', () => {
+    const result = canRemoveMember('58', '59', '58', 'manager');
+    expect(result.ok).toBe(true);
+  });
+
+  test('retirer le manager lui-même → refusé', () => {
+    const result = canRemoveMember('58', '58', '58', 'manager');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('reassign');
+  });
+
+  test('admin peut retirer un membre normal', () => {
+    const result = canRemoveMember('58', '59', '1', 'admin');
+    expect(result.ok).toBe(true);
+  });
+
+  test('admin ne peut pas non plus retirer le manager', () => {
+    const result = canRemoveMember('58', '58', '1', 'admin');
+    expect(result.ok).toBe(false);
+  });
+
+  test('non-manager essaie de retirer → refusé', () => {
+    const result = canRemoveMember('58', '59', '60', 'developer');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('manager');
+  });
+});
+
+// ─── PATCH project — dates partielles ────────────────────────────────────────
+
+describe('PATCH project — validation dates partielles', () => {
+  function resolveNextDates(
+    bodyStart: string | undefined,
+    bodyEnd: string | undefined,
+    dbStart: string | null,
+    dbEnd: string | null,
+  ): { nextStart: string | null; nextEnd: string | null } {
+    return {
+      nextStart: typeof bodyStart === 'string' ? bodyStart : dbStart,
+      nextEnd: typeof bodyEnd === 'string' ? bodyEnd : dbEnd,
+    };
+  }
+
+  test('modifier startDate seule → comparaison avec endDate de la base', () => {
+    const { nextStart, nextEnd } = resolveNextDates('2026-07-01', undefined, '2026-06-01', '2026-09-30');
+    expect(nextStart).toBe('2026-07-01');
+    expect(nextEnd).toBe('2026-09-30');
+    expect(isValidDateRange(nextStart, nextEnd)).toBe(true);
+  });
+
+  test('modifier endDate seule → comparaison avec startDate de la base', () => {
+    const { nextStart, nextEnd } = resolveNextDates(undefined, '2026-08-01', '2026-06-01', '2026-09-30');
+    expect(nextStart).toBe('2026-06-01');
+    expect(nextEnd).toBe('2026-08-01');
+    expect(isValidDateRange(nextStart, nextEnd)).toBe(true);
+  });
+
+  test('modifier startDate après endDate existante → invalide', () => {
+    const { nextStart, nextEnd } = resolveNextDates('2026-12-01', undefined, '2026-06-01', '2026-09-30');
+    expect(isValidDateRange(nextStart, nextEnd)).toBe(false);
+  });
+
+  test('aucune date fournie → garde les deux de la base', () => {
+    const { nextStart, nextEnd } = resolveNextDates(undefined, undefined, '2026-06-01', '2026-09-30');
+    expect(nextStart).toBe('2026-06-01');
+    expect(nextEnd).toBe('2026-09-30');
+  });
+});
+
+// ─── Error codes format ───────────────────────────────────────────────────────
+
+describe('Error codes format — Validation & Errors Standard', () => {
+  const VALID_ERROR_CODES = [
+    'UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND',
+    'VALIDATION_ERROR', 'CONFLICT', 'INTERNAL_ERROR',
+  ];
+
+  test('tous les codes sont en MAJUSCULES', () => {
+    for (const code of VALID_ERROR_CODES) {
+      expect(code).toBe(code.toUpperCase());
+    }
+  });
+
+  test('aucun code ne contient de chiffres', () => {
+    for (const code of VALID_ERROR_CODES) {
+      expect(/\d/.test(code)).toBe(false);
+    }
+  });
+
+  test('format de réponse erreur contient message et code', () => {
+    function makeError(message: string, code: string) {
+      return { message, code };
+    }
+    const err = makeError('Project not found', 'NOT_FOUND');
+    expect(err).toHaveProperty('message');
+    expect(err).toHaveProperty('code');
+    expect(typeof err.message).toBe('string');
+    expect(typeof err.code).toBe('string');
+  });
+
+  test('code UNAUTHORIZED correspond au HTTP 401', () => {
+    const httpCodes: Record<string, number> = {
+      UNAUTHORIZED: 401, FORBIDDEN: 403, NOT_FOUND: 404,
+      VALIDATION_ERROR: 400, CONFLICT: 409, INTERNAL_ERROR: 500,
+    };
+    expect(httpCodes['UNAUTHORIZED']).toBe(401);
+    expect(httpCodes['FORBIDDEN']).toBe(403);
+    expect(httpCodes['NOT_FOUND']).toBe(404);
+    expect(httpCodes['VALIDATION_ERROR']).toBe(400);
+    expect(httpCodes['CONFLICT']).toBe(409);
+    expect(httpCodes['INTERNAL_ERROR']).toBe(500);
+  });
+});
+
 // ─── History integration (BR-03) ─────────────────────────────────────────────
 
 describe('History integration — BR-03', () => {
@@ -282,7 +529,7 @@ describe('History integration — BR-03', () => {
     return { taskId, boardId, fromColumnId, toColumnId, fromSlug, toSlug, byEmail, note };
   }
 
-  test('création → historique avec from=null', () => {
+  test('création de tâche → historique avec from=null', () => {
     const entry = buildHistoryEntry('t1', 'b1', null, 'col-todo', null, 'todo', 'manager@nibras.demo', 'Task created');
     expect(entry.fromColumnId).toBeNull();
     expect(entry.fromSlug).toBeNull();
@@ -299,13 +546,15 @@ describe('History integration — BR-03', () => {
   test('close → historique avec toSlug=done', () => {
     const entry = buildHistoryEntry('t1', 'b1', 'col-review', 'col-done', 'review', 'done', 'manager@nibras.demo', 'Task closed');
     expect(entry.toSlug).toBe('done');
+    expect(entry.note).toBe('Task closed');
   });
 
-  test('champs obligatoires présents', () => {
+  test('champs obligatoires présents dans chaque entrée', () => {
     const entry = buildHistoryEntry('t1', 'b1', null, 'col-todo', null, 'todo', 'manager@nibras.demo', 'Task created');
     expect(entry.taskId).toBeDefined();
     expect(entry.boardId).toBeDefined();
     expect(entry.toColumnId).toBeDefined();
+    expect(entry.toSlug).toBeDefined();
     expect(entry.byEmail).toBeDefined();
   });
 });

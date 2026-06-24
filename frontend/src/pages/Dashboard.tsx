@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { clearAuthTokens, fetchWithAuth, getAccessToken } from '../lib/auth'
 import { getPermissions, type Permissions } from '../lib/permissions'
@@ -244,6 +244,33 @@ export default function Dashboard() {
                 {action.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="mb-6 border-t border-gray-100 pt-5">
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">Espace de travail</h2>
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              to="/boards"
+              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-700 transition-colors hover:border-blue-300 hover:bg-blue-50"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="18" rx="1" />
+                <rect x="14" y="3" width="7" height="11" rx="1" />
+              </svg>
+              Tableaux
+            </Link>
+            <Link
+              to="/kpi"
+              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-700 transition-colors hover:border-blue-300 hover:bg-blue-50"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+              KPIs
+            </Link>
           </div>
         </div>
 

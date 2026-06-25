@@ -43,6 +43,7 @@ type TaskRow = {
   due_date: string | null;
   complexity: number | null;
   assignee_email: string | null;
+  assignee_id: string | null;
   created_by_email: string;
   created_at: string;
   updated_at: string;
@@ -111,6 +112,27 @@ async function getProjectById(projectId: string) {
   });
 
   return result.rows[0] as { id: string; name: string } | undefined;
+}
+
+/**
+ * Resolve a user by id only if they belong to the given team.
+ * Returns the member (id + email) or undefined if not a member of that team.
+ * Used to scope task assignment to the board's team.
+ */
+async function resolveTeamMember(teamId: string, memberId: string) {
+  const result = await db.execute({
+    sql: `
+      SELECT users.id, users.email
+      FROM users
+      JOIN team_members ON team_members.user_id = users.id
+      WHERE team_members.team_id = ? AND users.id = ?
+      LIMIT 1
+    `,
+    args: [teamId, memberId],
+  });
+
+  const row = result.rows[0] as { id: number | string; email: string } | undefined;
+  return row ? { id: String(row.id), email: row.email } : undefined;
 }
 
 async function getBoardColumns(boardId: string) {
@@ -407,7 +429,13 @@ export default new Elysia()
 
     const source = normalizeText(body.source) || 'manual';
     const linkedProject = normalizeText(body.linkedProject) || null;
-    const teamId = normalizeText(body.teamId) || null;
+
+    // Every board must belong to a team — task assignment is scoped to its members.
+    const teamId = normalizeText(body.teamId);
+    if (!teamId) {
+      set.status = 400;
+      return { message: 'A board must be assigned to a team' };
+    }
 
     let linkedProjectName: string | null = null;
     if (linkedProject) {
@@ -419,22 +447,20 @@ export default new Elysia()
       linkedProjectName = project.name;
     }
 
-    if (teamId) {
-      const teamResult = await db.execute({
-        sql: 'SELECT id, manager_id FROM teams WHERE id = ?',
-        args: [teamId],
-      });
+    const teamResult = await db.execute({
+      sql: 'SELECT id, manager_id FROM teams WHERE id = ?',
+      args: [teamId],
+    });
 
-      const teamRow = teamResult.rows[0] as { id: string; manager_id: string } | undefined;
-      if (!teamRow) {
-        set.status = 404;
-        return { message: 'Team not found' };
-      }
+    const teamRow = teamResult.rows[0] as { id: string; manager_id: string } | undefined;
+    if (!teamRow) {
+      set.status = 404;
+      return { message: 'Team not found' };
+    }
 
-      if (teamRow.manager_id !== user.id && user.role !== 'admin') {
-        set.status = 403;
-        return { message: 'Only the team manager or admin can attach a team board' };
-      }
+    if (teamRow.manager_id !== user.id && user.role !== 'admin') {
+      set.status = 403;
+      return { message: 'Only the team manager or admin can attach a team board' };
     }
 
     const boardId = crypto.randomUUID();
@@ -615,23 +641,27 @@ export default new Elysia()
     }
 
     if (typeof body.teamId === 'string') {
-      const teamId = body.teamId.trim() || null;
-      if (teamId) {
-        const teamResult = await db.execute({
-          sql: 'SELECT id, manager_id FROM teams WHERE id = ?',
-          args: [teamId],
-        });
+      const teamId = body.teamId.trim();
+      // A board must always keep a team — it cannot be unset.
+      if (!teamId) {
+        set.status = 400;
+        return { message: 'A board must be assigned to a team' };
+      }
 
-        const teamRow = teamResult.rows[0] as { id: string; manager_id: string } | undefined;
-        if (!teamRow) {
-          set.status = 404;
-          return { message: 'Team not found' };
-        }
+      const teamResult = await db.execute({
+        sql: 'SELECT id, manager_id FROM teams WHERE id = ?',
+        args: [teamId],
+      });
 
-        if (teamRow.manager_id !== user.id && user.role !== 'admin') {
-          set.status = 403;
-          return { message: 'Only the team manager or admin can attach a team board' };
-        }
+      const teamRow = teamResult.rows[0] as { id: string; manager_id: string } | undefined;
+      if (!teamRow) {
+        set.status = 404;
+        return { message: 'Team not found' };
+      }
+
+      if (teamRow.manager_id !== user.id && user.role !== 'admin') {
+        set.status = 403;
+        return { message: 'Only the team manager or admin can attach a team board' };
       }
 
       updates.push('team_id = ?');
@@ -873,6 +903,40 @@ export default new Elysia()
     return { message: 'Column deleted successfully' };
   })
 
+  // Members of the board's team — used to populate the assignee dropdown.
+  .get('/boards/:boardId/members', async ({ headers, params, set }) => {
+    const user = await getCurrentUser(headers.authorization);
+    if (!user) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const boardAccess = await getAccessibleBoard(params.boardId, user);
+    if ('error' in boardAccess) {
+      set.status = boardAccess.status;
+      return { message: boardAccess.error };
+    }
+
+    if (!boardAccess.board.team_id) {
+      return { members: [] };
+    }
+
+    const result = await db.execute({
+      sql: `
+        SELECT users.id, users.username, users.email
+        FROM team_members
+        JOIN users ON users.id = team_members.user_id
+        WHERE team_members.team_id = ?
+        ORDER BY users.username ASC
+      `,
+      args: [boardAccess.board.team_id],
+    });
+
+    const members = (result.rows as unknown as Array<{ id: number | string; username: string; email: string }>)
+      .map((row) => ({ id: String(row.id), username: row.username, email: row.email }));
+
+    return { members };
+  })
 
   .post('/boards/:boardId/tasks', async ({ headers, params, body, set }) => {
     const user = await getCurrentUser(headers.authorization);
@@ -926,17 +990,36 @@ export default new Elysia()
       return { message: 'Complexity must be between 1 and 5' };
     }
 
+    // A task must be assigned to a member of the board's team (by member id),
+    // so KPIs (focus, workload) are accurate and scoped to the team.
+    if (!boardAccess.board.team_id) {
+      set.status = 400;
+      return { message: 'This board has no team assigned; assign a team to the board first' };
+    }
+
+    const assigneeId = normalizeText(body.assigneeId);
+    if (!assigneeId) {
+      set.status = 400;
+      return { message: 'A task must be assigned to at least one team member' };
+    }
+
+    const member = await resolveTeamMember(boardAccess.board.team_id, assigneeId);
+    if (!member) {
+      set.status = 403;
+      return { message: "Assignee must be a member of the board's team" };
+    }
+    const assigneeEmail = member.email;
+
     const taskId = crypto.randomUUID();
     const description = normalizeText(body.description) || null;
-    const assigneeEmail = normalizeText(body.assigneeEmail) || null;
     const dueDate = normalizeText(body.dueDate) || null;
 
     await db.execute({
       sql: `
         INSERT INTO tasks (
           id, board_id, column_id, title, description, priority,
-          status_slug, due_date, complexity, assignee_email, created_by_email, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          status_slug, due_date, complexity, assignee_email, assignee_id, created_by_email, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `,
       args: [
         taskId,
@@ -949,6 +1032,7 @@ export default new Elysia()
         dueDate,
         complexity,
         assigneeEmail,
+        member.id,
         user.email,
       ],
     });
@@ -985,6 +1069,7 @@ export default new Elysia()
         status: selectedColumn.slug,
         dueDate,
         complexity,
+        assigneeId: member.id,
         assigneeEmail,
         createdByEmail: user.email,
       },
@@ -997,7 +1082,7 @@ export default new Elysia()
       priority: t.Optional(t.String()),
       dueDate: t.Optional(t.String()),
       complexity: t.Optional(t.Number()),
-      assigneeEmail: t.Optional(t.String()),
+      assigneeId: t.Optional(t.String()),
       columnId: t.Optional(t.String()),
     }),
   })
@@ -1071,11 +1156,28 @@ export default new Elysia()
       values.push(body.complexity);
     }
 
-    if (typeof body.assigneeEmail === 'string') {
-      const nextAssignee = body.assigneeEmail.trim() || null;
+    if (typeof body.assigneeId === 'string') {
+      const nextAssigneeId = body.assigneeId.trim();
+
+      // A task must stay assigned to a member of the board's team.
+      if (!nextAssigneeId) {
+        set.status = 400;
+        return { message: 'A task must be assigned to at least one team member' };
+      }
+
+      if (!boardAccess.board.team_id) {
+        set.status = 400;
+        return { message: 'This board has no team assigned; assign a team to the board first' };
+      }
+
+      const member = await resolveTeamMember(boardAccess.board.team_id, nextAssigneeId);
+      if (!member) {
+        set.status = 403;
+        return { message: "Assignee must be a member of the board's team" };
+      }
 
       // Log the change so the KPI Focus Score can measure reassignment.
-      if (nextAssignee !== task.assignee_email) {
+      if (member.id !== task.assignee_id) {
         await db.execute({
           sql: `
             INSERT INTO task_assignment_history (id, task_id, board_id, from_email, to_email, changed_by_email)
@@ -1086,14 +1188,14 @@ export default new Elysia()
             params.taskId,
             params.boardId,
             task.assignee_email,
-            nextAssignee,
+            member.email,
             user.email,
           ],
         });
       }
 
-      updates.push('assignee_email = ?');
-      values.push(nextAssignee);
+      updates.push('assignee_id = ?', 'assignee_email = ?');
+      values.push(member.id, member.email);
     }
 
     if (updates.length === 0) {
@@ -1121,7 +1223,7 @@ export default new Elysia()
       priority: t.Optional(t.String()),
       dueDate: t.Optional(t.String()),
       complexity: t.Optional(t.Number()),
-      assigneeEmail: t.Optional(t.String()),
+      assigneeId: t.Optional(t.String()),
     }),
   })
 
@@ -1228,7 +1330,13 @@ export default new Elysia()
     }
 
     const result = await db.execute({
-      sql: 'SELECT * FROM task_history WHERE board_id = ? AND task_id = ? ORDER BY created_at DESC',
+      sql: `
+        SELECT th.*, tasks.due_date, tasks.title AS task_title
+        FROM task_history th
+        LEFT JOIN tasks ON tasks.id = th.task_id
+        WHERE th.board_id = ? AND th.task_id = ?
+        ORDER BY th.created_at DESC
+      `,
       args: [params.boardId, params.taskId],
     });
 
@@ -1260,7 +1368,13 @@ export default new Elysia()
   }
 
   const result = await db.execute({
-    sql: 'SELECT * FROM task_history WHERE task_id = ? ORDER BY created_at DESC',
+    sql: `
+      SELECT th.*, tasks.due_date, tasks.title AS task_title
+      FROM task_history th
+      LEFT JOIN tasks ON tasks.id = th.task_id
+      WHERE th.task_id = ?
+      ORDER BY th.created_at DESC
+    `,
     args: [params.taskId],
   });
 

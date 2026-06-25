@@ -4,6 +4,9 @@ import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import ChooseRolePage from './pages/ChooseRolePage'
+import BoardsPage from './pages/BoardsPage'
+import BoardDetailPage from './pages/BoardDetailPage'
+import KpiPage from './pages/KpiPage'
 
 function App() {
   return (
@@ -13,6 +16,9 @@ function App() {
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/choose-role" element={<ChooseRolePage />} />
       <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/boards" element={<BoardsPage />} />
+      <Route path="/boards/:boardId" element={<BoardDetailPage />} />
+      <Route path="/kpi" element={<KpiPage />} />
     </Routes>
   )
 }

@@ -83,6 +83,7 @@ async function initDB() {
             due_date TEXT DEFAULT NULL,
             complexity INTEGER DEFAULT NULL,
             assignee_email TEXT DEFAULT NULL,
+            assignee_id TEXT DEFAULT NULL,
             created_by_email TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -264,6 +265,15 @@ async function initDB() {
     try {
         await db.execute(`
             ALTER TABLE projects ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
+    // Ensure `assignee_id` exists on `tasks` for older DBs (assignment by team member id)
+    try {
+        await db.execute(`
+            ALTER TABLE tasks ADD COLUMN assignee_id TEXT DEFAULT NULL
         `);
     } catch (_) {
         // column already exists → ignore

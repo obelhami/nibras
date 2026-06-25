@@ -41,15 +41,15 @@ type ColumnRow = {
   position: number;
 };
 
-// Réutilise la même logique d'auth que board.ts (Hamza) : lit le token
+
 // JWT puis charge l'utilisateur depuis la base pour avoir le rôle à jour.
 async function getCurrentUser(authorization: string | undefined): Promise<AuthUser | null> {
   const payload = verifyAuthToken(authorization);
   if (!payload || payload.purpose === 'verification') return null;
 
   const result = await db.execute({
-    sql: 'SELECT id, username, email, role FROM users WHERE email = ?',
-    args: [payload.email],
+    sql: 'SELECT id, username, email, role FROM users WHERE id = ?',
+    args: [payload.userId ?? payload.email],
   });
 
   const row = result.rows[0] as { id: number | string; username: string; email: string; role: string | null } | undefined;
@@ -64,8 +64,6 @@ async function getCurrentUser(authorization: string | undefined): Promise<AuthUs
 }
 
 // Vérifie qu'un board existe et que l'utilisateur y a accès,
-// copie du pattern getAccessibleBoard de board.ts (Hamza) mais
-// ne modifie pas son fichier — on duplique uniquement le minimum
 // nécessaire pour ne pas créer de couplage.
 async function getBoard(boardId: string, user: AuthUser) {
   const result = await db.execute({
@@ -125,7 +123,6 @@ async function getAssigneesForTasks(taskIds: string[]): Promise<Record<string, s
 
 export default new Elysia()
   // ── GET /boards/:boardId/tasks — Pagination and filters (P0) ──────────
-  // Remplace le GET sans pagination de board.ts (Hamza doit retirer le sien).
   .get('/boards/:boardId/tasks', async ({ headers, params, query, set }) => {
     const user = await getCurrentUser(headers.authorization);
     if (!user) return unauthorized(set);
@@ -154,7 +151,6 @@ export default new Elysia()
     }
 
     if (query.assigneeId) {
-      // Résolution assigneeId → email pour le filtre SQL
       const assigneeResult = await db.execute({
         sql: 'SELECT email FROM users WHERE id = ?',
         args: [query.assigneeId],
@@ -201,7 +197,6 @@ export default new Elysia()
 
   // ── POST /boards/:boardId/tasks/:taskId/assignees — Add assignee (P0) ──
   // Assignation à plusieurs utilisateurs : complète le champ unique
-  // assignee_email de Hamza sans le casser.
   .post('/boards/:boardId/tasks/:taskId/assignees', async ({ headers, params, body, set }) => {
     const user = await getCurrentUser(headers.authorization);
     if (!user) return unauthorized(set);
@@ -225,7 +220,7 @@ export default new Elysia()
     const userId = normalizeText(body.userId);
     if (!userId) return validationError(set, 'userId is required');
 
-    // Résolution userId → email (task_assignees stocke l'email pour compatibilité)
+
     const userResult = await db.execute({
       sql: 'SELECT id, email FROM users WHERE id = ?',
       args: [userId],
@@ -243,7 +238,6 @@ export default new Elysia()
       return internalError(set);
     }
 
-    // Maintient assignee_email (champ legacy de Hamza) sur le premier assigné.
     if (!task.assignee_email) {
       await db.execute({
         sql: 'UPDATE tasks SET assignee_email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -277,7 +271,6 @@ export default new Elysia()
     const canAssign = isOwner || user.role === 'manager' || user.role === 'admin';
     if (!canAssign) return forbidden(set, 'You do not have permission to modify task assignment');
 
-    // Résolution userId → email
     const userResult = await db.execute({
       sql: 'SELECT id, email FROM users WHERE id = ?',
       args: [params.userId],
@@ -304,8 +297,6 @@ export default new Elysia()
   })
 
   // ── PATCH /boards/:boardId/tasks/:taskId/riskScore — riskScore (P0) ────
-  // Champ riskScore séparé (la colonne risk_score ajoutée via migrations.ts).
-  // Le KPI Engine (Hamza, P1) pourra l'écraser via une recomputation.
   .patch('/boards/:boardId/tasks/:taskId/riskScore', async ({ headers, params, body, set }) => {
     const user = await getCurrentUser(headers.authorization);
     if (!user) return unauthorized(set);
@@ -468,7 +459,6 @@ export default new Elysia()
   })
 
   // ── DELETE /boards/:boardId/tasks/:taskId — Delete task ────────────────
-  // Manquait complètement dans board.ts (Hamza n'a que create/update/move).
   .delete('/boards/:boardId/tasks/:taskId', async ({ headers, params, set }) => {
     const user = await getCurrentUser(headers.authorization);
     if (!user) return unauthorized(set);

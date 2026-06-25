@@ -343,32 +343,32 @@ describe('Complexity validation — Tasks API', () => {
 // ─── userId validation — Assignees ───────────────────────────────────────────
 
 describe('userId validation — Assignees', () => {
-    function isValidUserId(userId: string): boolean {
-      const n = Number(userId);
-      return userId.trim() !== '' && !isNaN(n) && n > 0;
-    }
-  
-    test('userId numérique valide → accepté', () => {
-      expect(isValidUserId('63')).toBe(true);
-      expect(isValidUserId('1')).toBe(true);
-      expect(isValidUserId('999')).toBe(true);
-    });
-  
-    test('userId vide → invalide', () => {
-      expect(isValidUserId('')).toBe(false);
-      expect(isValidUserId('  ')).toBe(false);
-    });
-  
-    test('userId non numérique → invalide', () => {
-      expect(isValidUserId('abc')).toBe(false);
-      expect(isValidUserId('dev1@nibras.demo')).toBe(false);
-    });
-  
-    test('userId négatif ou zéro → invalide', () => {
-      expect(isValidUserId('0')).toBe(false);
-      expect(isValidUserId('-1')).toBe(false);
-    });
+  function isValidUserId(userId: string): boolean {
+    const n = Number(userId);
+    return userId.trim() !== '' && !isNaN(n) && n > 0;
+  }
+
+  test('userId numérique valide → accepté', () => {
+    expect(isValidUserId('63')).toBe(true);
+    expect(isValidUserId('1')).toBe(true);
+    expect(isValidUserId('999')).toBe(true);
   });
+
+  test('userId vide → invalide', () => {
+    expect(isValidUserId('')).toBe(false);
+    expect(isValidUserId('  ')).toBe(false);
+  });
+
+  test('userId non numérique → invalide', () => {
+    expect(isValidUserId('abc')).toBe(false);
+    expect(isValidUserId('dev1@nibras.demo')).toBe(false);
+  });
+
+  test('userId négatif ou zéro → invalide', () => {
+    expect(isValidUserId('0')).toBe(false);
+    expect(isValidUserId('-1')).toBe(false);
+  });
+});
 
 // ─── Close task — tous les statuts source ────────────────────────────────────
 
@@ -638,6 +638,29 @@ describe('assignee_email legacy — sync après suppression du dernier assigné'
       'dev2@nibras.demo', 'dev1@nibras.demo', ['dev1@nibras.demo'],
     );
     expect(result).toBe('dev1@nibras.demo');
+  });
+});
+
+// ─── getCurrentUser — recherche par userId ────────────────────────────────────
+
+describe('getCurrentUser — recherche par userId', () => {
+  function resolveUserLookupKey(payload: { userId?: string; email?: string }): string | undefined {
+    return payload.userId ?? payload.email;
+  }
+
+  test('payload avec userId → recherche par userId', () => {
+    const key = resolveUserLookupKey({ userId: '63', email: 'dev1@nibras.demo' });
+    expect(key).toBe('63');
+  });
+
+  test('payload sans userId → fallback sur email', () => {
+    const key = resolveUserLookupKey({ email: 'dev1@nibras.demo' });
+    expect(key).toBe('dev1@nibras.demo');
+  });
+
+  test('payload vide → undefined', () => {
+    const key = resolveUserLookupKey({});
+    expect(key).toBeUndefined();
   });
 });
 

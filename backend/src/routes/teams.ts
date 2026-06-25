@@ -31,15 +31,14 @@ function serializeTeam(row: TeamRow) {
 
 // Authentifie le token et recharge l'utilisateur depuis la base (pour
 // avoir son role à jour). Pas de système de permission ici : lib/permissions.ts
-// (Omar - RBAC) ne définit aucune action team, donc le contrôle de rôle
-// se fait directement dans ce fichier.
+
 async function getAuthenticatedUser(authorization: string | undefined): Promise<AuthUser | null> {
   const payload = verifyAuthToken(authorization);
   if (!payload) return null;
 
   const result = await db.execute({
-    sql: 'SELECT id, username, email, role FROM users WHERE email = ?',
-    args: [payload.email],
+    sql: 'SELECT id, username, email, role FROM users WHERE id = ?',
+    args: [payload.userId ?? payload.email],
   });
 
   const row = result.rows[0] as { id: number | string; username: string; email: string; role: string | null } | undefined;

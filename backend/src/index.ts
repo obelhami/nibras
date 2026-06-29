@@ -11,6 +11,7 @@ import teamRoutes from './routes/teams';
 import taskRoutes from './routes/tasks';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
+import kpiRoutes from './routes/kpi';
 import { runTasksMigrations } from './lib/migrations';
 
 // Tasks API polish migrations (task_assignees, task_comments, risk_score)
@@ -60,6 +61,7 @@ const app = new Elysia()
   .use(taskRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
+  .use(kpiRoutes)
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');

@@ -10,13 +10,14 @@
  * DELETE /notifications                           → supprimer toutes les notifs lues
  * POST   /notifications/trigger/overdue           → scan overdue (manager/admin)
  * POST   /notifications/trigger/review-saturation → scan saturation (manager/admin)
+ * POST   /notifications/test/seed                 → créer 4 notifs de test
  */
 
 import { Elysia, t } from 'elysia';
 import { db } from '../../db';
 import { verifyAuthToken } from '../lib/jwt';
 import { unauthorized, forbidden, notFound } from '../lib/errors';
-import { notifyOverdueTask, notifyReviewSaturation } from '../lib/notifications';
+import { notifyOverdueTask, notifyReviewSaturation, createNotification } from '../lib/notifications';
 import { parsePagination, buildPaginationMeta } from '../lib/pagination';
 
 type AuthUser = {
@@ -305,6 +306,54 @@ const notificationRoutes = new Elysia({ prefix: '/notifications' })
     }
 
     return { message: 'Review saturation scan complete', notifications_created: triggered };
+  })
+
+  // POST /notifications/test/seed — ENDPOINT DE TEST, à supprimer après validation
+  .post('/test/seed', async ({ headers, set }) => {
+    const user = await getCurrentUser(headers.authorization);
+    if (!user) return unauthorized(set);
+
+    await createNotification({
+      recipientEmail: user.email,
+      type: 'overdue_task',
+      severity: 'warning',
+      title: 'Overdue task',
+      message: '"Deploy to staging" was due on 2026-06-20 and has not been completed.',
+      entityType: 'task',
+      entityId: 'test-task-001',
+    });
+
+    await createNotification({
+      recipientEmail: user.email,
+      type: 'blocker_alert',
+      severity: 'critical',
+      title: 'Task has been blocked for a long time',
+      message: '"Fix auth bug" has been in "blocked" status since 2026-06-24. This may be impacting delivery.',
+      entityType: 'task',
+      entityId: 'test-task-002',
+    });
+
+    await createNotification({
+      recipientEmail: user.email,
+      type: 'overload_warning',
+      severity: 'warning',
+      title: 'High workload detected',
+      message: 'You currently have 12 active tasks. Consider flagging blockers or discussing prioritization with your manager.',
+      entityType: 'user',
+      entityId: user.email,
+    });
+
+    await createNotification({
+      recipientEmail: user.email,
+      type: 'sprint_risk',
+      severity: 'critical',
+      title: 'Sprint risk detected',
+      message: 'Current sprint velocity is dropping. 5 tasks are overdue and 3 are blocked. Delivery may be at risk.',
+      entityType: 'board',
+      entityId: 'test-board-001',
+    });
+
+    return { message: 'Test notifications created', count: 4 };
   });
 
 export default notificationRoutes;

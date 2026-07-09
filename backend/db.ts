@@ -148,6 +148,45 @@ async function initDB() {
             generated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     `);
+    // AI ENGINE (Module 8 — AI-01 Recommendation Engine)
+    // Every generated recommendation is stored as `pending`: the AI never takes
+    // automatic decisions, a manager must accept or dismiss each insight.
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS ai_insights (
+            id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL,            -- 'team' (AI-01) | 'board' (AI-02 Sprint Doctor)
+            scope_id TEXT NOT NULL,
+            type TEXT NOT NULL,             -- rule id, e.g. 'review_saturation'
+            severity TEXT NOT NULL,         -- 'info' | 'warning' | 'critical'
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            evidence TEXT NOT NULL DEFAULT '{}',  -- JSON numbers that triggered the rule
+            confidence REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'accepted' | 'dismissed'
+            validated_by_email TEXT DEFAULT NULL,
+            validated_at TEXT DEFAULT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    // Upgrade a legacy empty `ai_insights` table (target_type/target_id/category,
+    // no validation columns) to the Module 8 schema. Each step is safe to re-run.
+    const aiInsightMigrations = [
+        `ALTER TABLE ai_insights RENAME COLUMN target_type TO scope`,
+        `ALTER TABLE ai_insights RENAME COLUMN target_id TO scope_id`,
+        `ALTER TABLE ai_insights RENAME COLUMN category TO type`,
+        `ALTER TABLE ai_insights ADD COLUMN title TEXT NOT NULL DEFAULT ''`,
+        `ALTER TABLE ai_insights ADD COLUMN evidence TEXT NOT NULL DEFAULT '{}'`,
+        `ALTER TABLE ai_insights ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`,
+        `ALTER TABLE ai_insights ADD COLUMN validated_by_email TEXT DEFAULT NULL`,
+        `ALTER TABLE ai_insights ADD COLUMN validated_at TEXT DEFAULT NULL`,
+    ];
+    for (const migration of aiInsightMigrations) {
+        try {
+            await db.execute(migration);
+        } catch (_) {
+            // column already renamed / already exists → ignore
+        }
+    }
     // History of task re-assignments — feeds the Focus Score "excessive reassignment" indicator.
     await db.execute(`
         CREATE TABLE IF NOT EXISTS task_assignment_history (

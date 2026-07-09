@@ -9,13 +9,19 @@ import behaviorRoutes from './routes/behavior';
 import projectRoutes from './routes/project';
 import teamRoutes from './routes/teams';
 import taskRoutes from './routes/tasks';
+import trelloRoutes from './routes/trello';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
 import notificationRoutes from './routes/notifications';
 import { runTasksMigrations } from './lib/migrations';
+import { startTrelloSyncWorker } from './lib/trello';
 
 // Tasks API polish migrations (task_assignees, task_comments, risk_score)
 runTasksMigrations().catch((err) => console.error('❌ Tasks migrations failed:', err));
+
+if (process.env.TESTING_MODE !== 'true') {
+  startTrelloSyncWorker();
+}
 
 
 const app = new Elysia()
@@ -59,6 +65,7 @@ const app = new Elysia()
   .use(projectRoutes)
   .use(teamRoutes)
   .use(taskRoutes)
+  .use(trelloRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
   .use(notificationRoutes)

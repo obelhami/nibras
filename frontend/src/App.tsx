@@ -7,6 +7,7 @@ import ChooseRolePage from './pages/ChooseRolePage'
 import BoardsPage from './pages/BoardsPage'
 import BoardDetailPage from './pages/BoardDetailPage'
 import KpiPage from './pages/KpiPage'
+import TrelloConnectPage from './pages/TrelloConnectPage'
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
       <Route path="/boards" element={<BoardsPage />} />
       <Route path="/boards/:boardId" element={<BoardDetailPage />} />
       <Route path="/kpi" element={<KpiPage />} />
+      <Route path="/integrations/trello" element={<TrelloConnectPage />} />
     </Routes>
   )
 }

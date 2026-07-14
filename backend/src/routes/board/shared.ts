@@ -192,13 +192,40 @@ async function userHasTeamAccess(board: BoardRow, userId: string) {
   return result.rows.length > 0;
 }
 
+// BR-07 : "A Manager only sees teams or projects under responsibility."
+// Un manager n'a accès qu'aux boards des équipes dont IL est le manager
+// (teams.manager_id), pas à tous les boards de la plateforme.
+async function isManagerOfBoardTeam(teamId: string | null, userId: string) {
+  if (!teamId) {
+    return false;
+  }
+
+  const result = await db.execute({
+    sql: 'SELECT 1 FROM teams WHERE id = ? AND manager_id = ? LIMIT 1',
+    args: [teamId, userId],
+  });
+
+  return result.rows.length > 0;
+}
+
 async function canAccessBoard(board: BoardRow, user: AuthUser) {
-  if (board.owner_email === user.email || user.role === 'admin' || user.role === 'manager') {
+  if (user.role === 'admin') {
+    return true;
+  }
+
+  if (board.owner_email === user.email) {
     return true;
   }
 
   if (board.visibility === 'public') {
     return true;
+  }
+
+  // BR-07 : un manager ne voit que les boards des équipes qu'il dirige,
+  // pas tous les boards. Sinon, on retombe sur l'appartenance à l'équipe
+  // (developer membre de l'équipe du board).
+  if (user.role === 'manager') {
+    return isManagerOfBoardTeam(board.team_id, user.id);
   }
 
   return userHasTeamAccess(board, user.id);
@@ -207,6 +234,16 @@ async function canAccessBoard(board: BoardRow, user: AuthUser) {
 async function canManageBoard(board: BoardRow, user: AuthUser) {
   if (board.owner_email === user.email) {
     return true;
+  }
+
+  if (user.role === 'admin') {
+    return true;
+  }
+
+  // BR-07 : un manager ne peut gérer (éditer/supprimer/ajouter colonnes et
+  // tâches) que les boards des équipes qu'il dirige.
+  if (user.role === 'manager') {
+    return isManagerOfBoardTeam(board.team_id, user.id);
   }
 
   return hasPermission(user.role, 'create_board');

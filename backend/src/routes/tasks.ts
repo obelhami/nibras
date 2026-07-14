@@ -47,10 +47,15 @@ async function getCurrentUser(authorization: string | undefined): Promise<AuthUs
   const payload = verifyAuthToken(authorization);
   if (!payload || payload.purpose === 'verification') return null;
 
-  const result = await db.execute({
-    sql: 'SELECT id, username, email, role FROM users WHERE id = ?',
-    args: [payload.userId ?? payload.email],
-  });
+  const result = payload.userId
+    ? await db.execute({
+        sql: 'SELECT id, username, email, role FROM users WHERE id = ?',
+        args: [payload.userId],
+      })
+    : await db.execute({
+        sql: 'SELECT id, username, email, role FROM users WHERE email = ?',
+        args: [payload.email],
+      });
 
   const row = result.rows[0] as { id: number | string; username: string; email: string; role: string | null } | undefined;
   if (!row) return null;
@@ -80,6 +85,19 @@ async function getBoard(boardId: string, user: AuthUser) {
 
   if (!board) return null;
 
+  // Gouvernance : l'admin a toujours accès, quelle que soit la visibilité
+  // du board (CDC §27 "Security, ethics and access management").
+  if (user.role === 'admin') return board;
+
+  if (board.owner_email === user.email) return board;
+
+  // BR-07 : "A Manager only sees teams or projects under responsibility."
+  // Un manager n'a accès qu'aux boards des équipes qu'il dirige.
+  if (user.role === 'manager') {
+    const manages = await isManagerOfTeam(board.team_id, user.id);
+    return manages ? board : null;
+  }
+
   if (board.visibility === 'private' && board.owner_email !== user.email) return null;
 
   if (board.visibility === 'team' && board.team_id) {
@@ -91,6 +109,18 @@ async function getBoard(boardId: string, user: AuthUser) {
   }
 
   return board;
+}
+
+// BR-07 : "A Manager only sees teams or projects under responsibility."
+// Un manager n'a un droit de gestion (assignation, suppression) que sur les
+// boards des équipes qu'il dirige (teams.manager_id), pas sur tous les boards.
+async function isManagerOfTeam(teamId: string | null | undefined, userId: string): Promise<boolean> {
+  if (!teamId) return false;
+  const result = await db.execute({
+    sql: 'SELECT 1 FROM teams WHERE id = ? AND manager_id = ? LIMIT 1',
+    args: [teamId, userId],
+  });
+  return result.rows.length > 0;
 }
 
 // Helpers assignees
@@ -211,10 +241,13 @@ export default new Elysia()
     const task = taskResult.rows[0] as unknown as TaskRow | undefined;
     if (!task) return notFound(set, 'Task not found');
 
-    // Finalize assignment : seul le board owner ou un manager/admin
-    // peut assigner (cohérent avec board.ts qui vérifie hasPermission + owner).
+    // Module 2 — CDC §9: "Assign task" = No (Developer) / Yes (Manager, Admin).
+    // Board owners keep the right on their own board; managers only within
+    // their own team (BR-07).
     const isOwner = (board as { owner_email: string }).owner_email === user.email;
-    const canAssign = isOwner || user.role === 'manager' || user.role === 'admin';
+    const isScopedManager = user.role === 'manager'
+      && (await isManagerOfTeam((board as { team_id: string | null }).team_id, user.id));
+    const canAssign = isOwner || isScopedManager || user.role === 'admin';
     if (!canAssign) return forbidden(set, 'You do not have permission to assign this task');
 
     const userId = normalizeText(body.userId);
@@ -268,7 +301,9 @@ export default new Elysia()
     if (!task) return notFound(set, 'Task not found');
 
     const isOwner = (board as { owner_email: string }).owner_email === user.email;
-    const canAssign = isOwner || user.role === 'manager' || user.role === 'admin';
+    const isScopedManager = user.role === 'manager'
+      && (await isManagerOfTeam((board as { team_id: string | null }).team_id, user.id));
+    const canAssign = isOwner || isScopedManager || user.role === 'admin';
     if (!canAssign) return forbidden(set, 'You do not have permission to modify task assignment');
 
     const userResult = await db.execute({
@@ -473,10 +508,13 @@ export default new Elysia()
     const task = taskResult.rows[0] as unknown as TaskRow | undefined;
     if (!task) return notFound(set, 'Task not found');
 
-    // Seul le créateur, le board owner, ou manager/admin peut supprimer
+    // Seul le créateur, le board owner, l'admin, ou le manager de l'équipe
+    // du board (BR-07) peut supprimer.
     const isCreator = task.created_by_email === user.email;
     const isOwner = (board as { owner_email: string }).owner_email === user.email;
-    const canDelete = isCreator || isOwner || user.role === 'manager' || user.role === 'admin';
+    const isScopedManager = user.role === 'manager'
+      && (await isManagerOfTeam((board as { team_id: string | null }).team_id, user.id));
+    const canDelete = isCreator || isOwner || isScopedManager || user.role === 'admin';
     if (!canDelete) return forbidden(set, 'You do not have permission to delete this task');
 
     await db.execute({ sql: 'DELETE FROM tasks WHERE id = ?', args: [task.id] });

@@ -90,13 +90,14 @@ export default new Elysia()
     const taskId = crypto.randomUUID();
     const description = normalizeText(body.description) || null;
     const dueDate = normalizeText(body.dueDate) || null;
+    const isProactive = body.isProactive === true ? 1 : 0;
 
     await db.execute({
       sql: `
         INSERT INTO tasks (
           id, board_id, column_id, title, description, priority,
-          status_slug, due_date, complexity, assignee_email, assignee_id, created_by_email, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          status_slug, due_date, complexity, assignee_email, assignee_id, created_by_email, updated_at, is_proactive
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
       `,
       args: [
         taskId,
@@ -111,6 +112,7 @@ export default new Elysia()
         assigneeEmail,
         member.id,
         user.email,
+        isProactive,
       ],
     });
 
@@ -149,6 +151,7 @@ export default new Elysia()
         assigneeId: member.id,
         assigneeEmail,
         createdByEmail: user.email,
+        isProactive: Boolean(isProactive),
       },
       metrics: snapshot?.metrics ?? null,
     };
@@ -161,6 +164,7 @@ export default new Elysia()
       complexity: t.Optional(t.Number()),
       assigneeId: t.Optional(t.String()),
       columnId: t.Optional(t.String()),
+      isProactive: t.Optional(t.Boolean()),
     }),
   })
 
@@ -326,6 +330,14 @@ export default new Elysia()
     if (!task) {
       set.status = 404;
       return { message: 'Task not found' };
+    }
+
+    // Module 2 — CDC §9: "Move task" = Own tasks only (Developer) / Yes (Manager, Admin).
+    const isOwnTask = task.assignee_email === user.email || task.assignee_id === user.id;
+    const canMoveAny = hasPermission(user.role, 'move_task') && user.role !== 'developer';
+    if (!canMoveAny && !isOwnTask) {
+      set.status = 403;
+      return { message: 'You can only move tasks assigned to you' };
     }
 
     const targetColumnResult = await db.execute({

@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../../db';
 import { createAccessToken, createRefreshToken, createVerificationToken, verifyAuthToken } from '../lib/jwt';
 import { sendVerificationEmail } from '../../email';
+import { checkRateLimit, clientIpFromHeaders } from '../lib/rateLimit';
 
 const TESTING_MODE = process.env.TESTING_MODE === 'true';
 
@@ -25,9 +26,18 @@ export default new Elysia()
     };
   })
 
-  .post('/register', async ({ body, set }) => {
+  .post('/register', async ({ body, headers, set }) => {
     console.log("im here at register endpoint with email:", body.email);
     const { username, email, password, confirmPassword } = body;
+
+    // Module 1 — brute-force / spam protection: 5 signups / hour per IP.
+    const ip = clientIpFromHeaders(headers as Record<string, string | undefined>);
+    const rateLimit = checkRateLimit(`register:${ip}`, 5, 60 * 60_000);
+    if (!rateLimit.allowed) {
+      set.status = 429;
+      set.headers['retry-after'] = String(rateLimit.retryAfterSeconds);
+      return { message: 'Too many registration attempts. Please try again later.', code: 'RATE_LIMITED' };
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -194,8 +204,17 @@ export default new Elysia()
     }),
   })
 
-  .post('/login', async ({ body, set }) => {
+  .post('/login', async ({ body, headers, set }) => {
     const { email, password } = body;
+
+    // Module 1 — brute-force protection: 10 attempts / 15 min per IP+email.
+    const ip = clientIpFromHeaders(headers as Record<string, string | undefined>);
+    const rateLimit = checkRateLimit(`login:${ip}:${email}`, 10, 15 * 60_000);
+    if (!rateLimit.allowed) {
+      set.status = 429;
+      set.headers['retry-after'] = String(rateLimit.retryAfterSeconds);
+      return { message: 'Too many login attempts. Please try again later.', code: 'RATE_LIMITED' };
+    }
 
     const result = await db.execute({
       sql: 'SELECT * FROM users WHERE email = ?',

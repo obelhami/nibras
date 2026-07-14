@@ -137,7 +137,205 @@ export function computeOperationalKpis(tasks: KpiTaskRow[], history: KpiHistoryR
   };
 }
 
-// ---------- KPI-02: Focus Score (user scope) ----------
+// ---------- KPI-03bis: LDS Glossary extension — CRT / ADR / PRR / SLI ----------
+
+export type KpiCommentRow = { task_id: string; created_at: string };
+export type ProactiveTaskRow = KpiTaskRow & { is_proactive?: boolean | number | null };
+
+/**
+ * CRT — Client Response Time: average hours a task waits in "review" before
+ * moving forward.
+ *
+ * V1 proxy: Nibras does not yet model a dedicated "client" actor separate
+ * from the team, so the review stage (the point where external/client
+ * validation happens) stands in for "client response delay" — consistent
+ * with how ADT/VRR already treat review→done as the validation checkpoint.
+ * To refine in V2 once a client role or an explicit "waiting on client"
+ * timestamp exists.
+ */
+export function computeCRT(history: KpiHistoryRow[], now: number = Date.now()): number {
+  const enteredReview = firstReachedAt(history, REVIEW);
+  const waitHours: number[] = [];
+
+  for (const [taskId, enteredAt] of enteredReview) {
+    const nextMove = history
+      .filter((row) => row.task_id === taskId && new Date(row.created_at).getTime() > new Date(enteredAt).getTime())
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
+
+    const leftAt = nextMove ? nextMove.created_at : new Date(now).toISOString();
+    waitHours.push(hoursBetween(enteredAt, leftAt));
+  }
+
+  return round(avg(waitHours));
+}
+
+/**
+ * ADR — Active Documentation Ratio: share of delivered tasks that carry at
+ * least one comment.
+ *
+ * V1 proxy: Nibras does not yet have a dedicated "documentation" artifact
+ * type, so task comments (task_comments) are used as the closest available
+ * signal of knowledge being captured/transmitted around a delivered task.
+ */
+export function computeADR(history: KpiHistoryRow[], comments: KpiCommentRow[]): number {
+  const doneTaskIds = new Set(firstReachedAt(history, DONE).keys());
+  if (doneTaskIds.size === 0) return 0;
+
+  const documentedTaskIds = new Set(
+    comments.filter((comment) => doneTaskIds.has(comment.task_id)).map((comment) => comment.task_id),
+  );
+
+  return round((documentedTaskIds.size / doneTaskIds.size) * 100);
+}
+
+/**
+ * PRR — Proactive Recommendation Rate: share of tasks flagged as proposed
+ * outside the initial scope (`tasks.is_proactive`, set at creation time).
+ */
+export function computePRR(tasks: ProactiveTaskRow[]): number {
+  if (tasks.length === 0) return 0;
+  const proactiveCount = tasks.filter((task) => task.is_proactive === true || task.is_proactive === 1).length;
+  return round((proactiveCount / tasks.length) * 100);
+}
+
+/**
+ * SLI — Self Learning Index (user scope, 0-100): compares the average cycle
+ * time of a user's earliest completed tasks vs their most recent ones. A
+ * shrinking cycle time signals autonomous learning / execution acceleration.
+ * Returns a neutral 50 with lowConfidence=true when there isn't enough
+ * history (fewer than 4 completed tasks) to detect a trend.
+ */
+export function computeSLI(
+  completedTasks: { taskId: string; createdAt: string; doneAt: string }[],
+): { score: number; lowConfidence: boolean } {
+  if (completedTasks.length < 4) {
+    return { score: 50, lowConfidence: true };
+  }
+
+  const sorted = [...completedTasks].sort(
+    (a, b) => new Date(a.doneAt).getTime() - new Date(b.doneAt).getTime(),
+  );
+  const mid = Math.floor(sorted.length / 2);
+  const early = sorted.slice(0, mid);
+  const recent = sorted.slice(mid);
+
+  const earlyAvg = avg(early.map((t) => hoursBetween(t.createdAt, t.doneAt)));
+  const recentAvg = avg(recent.map((t) => hoursBetween(t.createdAt, t.doneAt)));
+
+  if (earlyAvg === 0) return { score: 50, lowConfidence: true };
+
+  const improvement = (earlyAvg - recentAvg) / earlyAvg; // > 0 = getting faster
+  const score = Math.round(clamp(50 + improvement * 50, 0, 100));
+
+  return { score, lowConfidence: false };
+}
+
+// ---------- Emotional KPIs (LDS Glossary — CDC §16) ----------
+
+function calculateStdDev(values: number[]): number {
+  if (values.length === 0) return 0;
+  const mean = avg(values);
+  const variance = avg(values.map((v) => (v - mean) ** 2));
+  return Math.sqrt(variance);
+}
+
+export type EmotionalKpis = {
+  consistencyScore: number;
+  deadlineSafety: number;
+  bottleneckScore: number;
+  blockedTimeRatio: number;
+  riskVelocity: number;
+  deliveryStabilityIndex: number;
+};
+
+/**
+ * Emotional KPIs — team/board scope, read the qualitative health of
+ * delivery rather than raw throughput (CDC §16). All values are 0-100,
+ * higher = healthier, except riskVelocity where a higher positive value
+ * means risk is accelerating (a signal to watch, not a "good" score).
+ */
+export function computeEmotionalKpis(
+  tasks: KpiTaskRow[],
+  history: KpiHistoryRow[],
+  now: number = Date.now(),
+): EmotionalKpis {
+  const doneAtByTask = firstReachedAt(history, DONE);
+  const createdAtByTask = new Map(tasks.map((task) => [task.id, task.created_at]));
+
+  // Consistency Score — lower spread of cycle times = more regular delivery.
+  const cycleHours: number[] = [];
+  for (const [taskId, doneAt] of doneAtByTask) {
+    const createdAt = createdAtByTask.get(taskId);
+    if (createdAt) cycleHours.push(hoursBetween(createdAt, doneAt));
+  }
+  const cycleStdDev = calculateStdDev(cycleHours);
+  const consistencyScore = Math.round(clamp(100 - (cycleStdDev / 48) * 100, 0, 100)); // normalized on a 48h spread
+
+  // Deadline Safety — share of open tasks with a due date that are neither
+  // overdue nor due within the next 24h.
+  const tasksWithDueDate = tasks.filter((task) => task.due_date && task.status_slug !== DONE);
+  const safeTasks = tasksWithDueDate.filter((task) => {
+    const dueAt = new Date(task.due_date as string).getTime();
+    return dueAt - now > 24 * 3_600_000;
+  });
+  const deadlineSafety = tasksWithDueDate.length > 0
+    ? Math.round((safeTasks.length / tasksWithDueDate.length) * 100)
+    : 100;
+
+  // Bottleneck Score — share of active tasks that have NOT been stuck in the
+  // same column for more than 7 days (a proxy for blocking points/critical
+  // dependencies).
+  const activeTasks = tasks.filter((task) => task.status_slug !== DONE);
+  const lastMoveByTask = new Map<string, string>();
+  for (const row of history) {
+    const existing = lastMoveByTask.get(row.task_id);
+    if (!existing || new Date(row.created_at).getTime() > new Date(existing).getTime()) {
+      lastMoveByTask.set(row.task_id, row.created_at);
+    }
+  }
+  const staleTasks = activeTasks.filter((task) => {
+    const lastMove = lastMoveByTask.get(task.id) ?? task.created_at;
+    return (now - new Date(lastMove).getTime()) / 3_600_000 > 24 * 7;
+  });
+  const bottleneckScore = activeTasks.length > 0
+    ? Math.round(clamp(100 - (staleTasks.length / activeTasks.length) * 100, 0, 100))
+    : 100;
+
+  // Blocked Time Ratio — share of history moves flagged as blockers.
+  const blockerMoves = history.filter((row) => isBlockerNote(row.note)).length;
+  const blockedTimeRatio = history.length > 0 ? round((blockerMoves / history.length) * 100) : 0;
+
+  // Risk Velocity — growth in overdue tasks between the first and second
+  // half of the currently-overdue set (positive = risk accelerating).
+  const overdueDueDates = tasks
+    .filter((task) => task.due_date && task.status_slug !== DONE && new Date(task.due_date).getTime() < now)
+    .map((task) => new Date(task.due_date as string).getTime())
+    .sort((a, b) => a - b);
+
+  let riskVelocity = 0;
+  if (overdueDueDates.length >= 2) {
+    const mid = Math.floor(overdueDueDates.length / 2);
+    const firstHalf = overdueDueDates.slice(0, mid).length;
+    const secondHalf = overdueDueDates.slice(mid).length;
+    riskVelocity = firstHalf > 0
+      ? Math.round(clamp(((secondHalf - firstHalf) / firstHalf) * 100, -100, 100))
+      : secondHalf * 20;
+  }
+
+  // Delivery Stability Index — composite read of the metrics above.
+  const deliveryStabilityIndex = Math.round(
+    clamp((consistencyScore + deadlineSafety + bottleneckScore) / 3 - Math.max(0, riskVelocity) / 5, 0, 100),
+  );
+
+  return {
+    consistencyScore,
+    deadlineSafety,
+    bottleneckScore,
+    blockedTimeRatio,
+    riskVelocity,
+    deliveryStabilityIndex,
+  };
+}
 
 function focusLabel(score: number): string {
   if (score >= 80) return 'excellent';

@@ -308,6 +308,41 @@ async function initDB() {
         ON trello_sync_jobs(status, next_attempt_at)
     `);
 
+    // The remote DB may hold a legacy trello_connections table (user_id/board_id
+    // schema) that CREATE TABLE IF NOT EXISTS silently skips — rebuild it.
+    const trelloConnectionsInfo = await db.execute(`PRAGMA table_info(trello_connections)`);
+    const hasTrelloUserEmail = trelloConnectionsInfo.rows.some(
+        (row) => (row as unknown as { name: string }).name === 'user_email',
+    );
+    if (!hasTrelloUserEmail) {
+        const legacyRows = await db.execute(`SELECT COUNT(*) AS c FROM trello_connections`);
+        const legacyCount = Number((legacyRows.rows[0] as unknown as { c: number | string }).c ?? 0);
+        if (legacyCount > 0) {
+            await db.execute(`ALTER TABLE trello_connections RENAME TO trello_connections_legacy`);
+        } else {
+            await db.execute(`DROP TABLE trello_connections`);
+        }
+        await db.execute(`
+            CREATE TABLE trello_connections (
+                id TEXT PRIMARY KEY,
+                user_email TEXT NOT NULL,
+                team_id TEXT NOT NULL,
+                access_token TEXT DEFAULT NULL,
+                token_secret TEXT DEFAULT NULL,
+                trello_member_id TEXT DEFAULT NULL,
+                trello_member_name TEXT DEFAULT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                last_sync_at TEXT DEFAULT NULL,
+                last_error TEXT DEFAULT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                next_sync_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_email, team_id)
+            )
+        `);
+    }
+
     /**
      * ⚠️ Optional migration (safe ignore if column exists)
      */

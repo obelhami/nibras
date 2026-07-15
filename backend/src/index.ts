@@ -19,7 +19,9 @@ import { startTrelloSyncWorker } from './lib/trello';
 // Tasks API polish migrations (task_assignees, task_comments, risk_score)
 runTasksMigrations().catch((err) => console.error('❌ Tasks migrations failed:', err));
 
-if (process.env.TESTING_MODE !== 'true') {
+// NODE_ENV=test est défini par `bun test` — le worker n'a rien à faire dans la suite.
+// (TESTING_MODE=true reste le mode dev normal : il ne doit pas couper le worker.)
+if (process.env.NODE_ENV !== 'test') {
   startTrelloSyncWorker();
 }
 

@@ -298,6 +298,20 @@ export const kpiApi = {
     }>(`/kpi/teams/${teamId}/dashboard?days=${days}`),
 }
 
+// ---------- Teams ----------
+
+export interface Team {
+  id: string
+  name: string
+  managerId: string | null
+  createdAt: string
+}
+
+export const teamsApi = {
+  list: (page = 1, limit = 50) =>
+    request<{ teams: Team[] }>(`/teams?page=${page}&limit=${limit}`),
+}
+
 // ---------- Trello integration ----------
 
 export const trelloApi = {

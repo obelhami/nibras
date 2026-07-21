@@ -103,6 +103,45 @@ export interface BoardMember {
   email: string
 }
 
+export interface TrelloConnectionStatus {
+  id: string
+  user_email: string
+  team_id: string
+  access_token: string | null
+  token_secret: string | null
+  trello_member_id: string | null
+  trello_member_name: string | null
+  status: string
+  last_sync_at: string | null
+  last_error: string | null
+  retry_count: number
+  next_sync_at: string | null
+  created_at: string
+  updated_at: string
+  pendingJobs: number
+  failedJobs: number
+}
+
+export interface TrelloSyncJob {
+  id: string
+  connection_id: string
+  job_type: string
+  payload: string
+  status: string
+  attempts: number
+  max_attempts: number
+  next_attempt_at: string
+  last_error: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface TrelloIntegrationStatus {
+  configured: boolean
+  connections: TrelloConnectionStatus[]
+  jobs: TrelloSyncJob[]
+}
+
 // ---------- KPI types ----------
 
 export interface OperationalKpis {
@@ -257,4 +296,30 @@ export const kpiApi = {
       focusScores: FocusScore[]
       generatedAt: string
     }>(`/kpi/teams/${teamId}/dashboard?days=${days}`),
+}
+
+// ---------- Teams ----------
+
+export interface Team {
+  id: string
+  name: string
+  managerId: string | null
+  createdAt: string
+}
+
+export const teamsApi = {
+  list: (page = 1, limit = 50) =>
+    request<{ teams: Team[] }>(`/teams?page=${page}&limit=${limit}`),
+}
+
+// ---------- Trello integration ----------
+
+export const trelloApi = {
+  status: () => request<TrelloIntegrationStatus>('/integrations/trello/status'),
+
+  connect: (teamId: string) => request<{ authorizationUrl: string }>('/integrations/trello/connect', jsonInit('POST', { teamId })),
+
+  sync: (connectionId: string) => request<{ message: string; jobId: string }>('/integrations/trello/sync', jsonInit('POST', { connectionId })),
+
+  disconnect: (connectionId: string) => request<{ message: string }>('/integrations/trello/disconnect', jsonInit('POST', { connectionId })),
 }

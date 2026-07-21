@@ -31,7 +31,9 @@ async function initDB() {
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             picture TEXT,
-            is_verified INTEGER NOT NULL DEFAULT 0
+            is_verified INTEGER NOT NULL DEFAULT 0,
+            external_source TEXT DEFAULT NULL,
+            external_id TEXT DEFAULT NULL
         )
     `);
     await db.execute(`
@@ -48,10 +50,15 @@ async function initDB() {
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             source TEXT NOT NULL DEFAULT 'manual',
+            external_source TEXT DEFAULT NULL,
+            external_id TEXT DEFAULT NULL,
             linked_project TEXT DEFAULT NULL,
             visibility TEXT NOT NULL DEFAULT 'private',
             team_id TEXT DEFAULT NULL,
             owner_email TEXT NOT NULL,
+            sync_status TEXT DEFAULT NULL,
+            sync_error TEXT DEFAULT NULL,
+            last_synced_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -62,7 +69,10 @@ async function initDB() {
             board_id TEXT NOT NULL,
             name TEXT NOT NULL,
             slug TEXT NOT NULL,
+            external_source TEXT DEFAULT NULL,
+            external_id TEXT DEFAULT NULL,
             position INTEGER NOT NULL DEFAULT 0,
+            last_synced_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (board_id)
                 REFERENCES boards(id)
@@ -83,6 +93,11 @@ async function initDB() {
             complexity INTEGER DEFAULT NULL,
             assignee_email TEXT DEFAULT NULL,
             assignee_id TEXT DEFAULT NULL,
+            external_source TEXT DEFAULT NULL,
+            external_id TEXT DEFAULT NULL,
+            tags TEXT NOT NULL DEFAULT '[]',
+            sync_error TEXT DEFAULT NULL,
+            last_synced_at TEXT DEFAULT NULL,
             created_by_email TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -225,6 +240,109 @@ async function initDB() {
         )
     `);
 
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS trello_oauth_states (
+            state TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            team_id TEXT NOT NULL,
+            request_token TEXT NOT NULL,
+            request_token_secret TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS trello_connections (
+            id TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            team_id TEXT NOT NULL,
+            access_token TEXT DEFAULT NULL,
+            token_secret TEXT DEFAULT NULL,
+            trello_member_id TEXT DEFAULT NULL,
+            trello_member_name TEXT DEFAULT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            last_sync_at TEXT DEFAULT NULL,
+            last_error TEXT DEFAULT NULL,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            next_sync_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_email, team_id)
+        )
+    `);
+
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS trello_entity_maps (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            trello_type TEXT NOT NULL,
+            trello_id TEXT NOT NULL,
+            nibras_type TEXT NOT NULL,
+            nibras_id TEXT NOT NULL,
+            parent_trello_id TEXT DEFAULT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(connection_id, trello_type, trello_id)
+        )
+    `);
+
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS trello_sync_jobs (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            job_type TEXT NOT NULL DEFAULT 'sync_connection',
+            payload TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'queued',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 5,
+            next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_error TEXT DEFAULT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await db.execute(`
+        CREATE INDEX IF NOT EXISTS idx_trello_sync_jobs_due
+        ON trello_sync_jobs(status, next_attempt_at)
+    `);
+
+    // The remote DB may hold a legacy trello_connections table (user_id/board_id
+    // schema) that CREATE TABLE IF NOT EXISTS silently skips — rebuild it.
+    const trelloConnectionsInfo = await db.execute(`PRAGMA table_info(trello_connections)`);
+    const hasTrelloUserEmail = trelloConnectionsInfo.rows.some(
+        (row) => (row as unknown as { name: string }).name === 'user_email',
+    );
+    if (!hasTrelloUserEmail) {
+        const legacyRows = await db.execute(`SELECT COUNT(*) AS c FROM trello_connections`);
+        const legacyCount = Number((legacyRows.rows[0] as unknown as { c: number | string }).c ?? 0);
+        if (legacyCount > 0) {
+            await db.execute(`ALTER TABLE trello_connections RENAME TO trello_connections_legacy`);
+        } else {
+            await db.execute(`DROP TABLE trello_connections`);
+        }
+        await db.execute(`
+            CREATE TABLE trello_connections (
+                id TEXT PRIMARY KEY,
+                user_email TEXT NOT NULL,
+                team_id TEXT NOT NULL,
+                access_token TEXT DEFAULT NULL,
+                token_secret TEXT DEFAULT NULL,
+                trello_member_id TEXT DEFAULT NULL,
+                trello_member_name TEXT DEFAULT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                last_sync_at TEXT DEFAULT NULL,
+                last_error TEXT DEFAULT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                next_sync_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_email, team_id)
+            )
+        `);
+    }
+
     /**
      * ⚠️ Optional migration (safe ignore if column exists)
      */
@@ -259,6 +377,100 @@ async function initDB() {
     } catch (_) {
         // column already exists → ignore
     }
+
+    try {
+        await db.execute(`
+            ALTER TABLE users ADD COLUMN external_source TEXT DEFAULT NULL
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
+    try {
+        await db.execute(`
+            ALTER TABLE users ADD COLUMN external_id TEXT DEFAULT NULL
+        `);
+    } catch (_) {
+        // column already exists → ignore
+    }
+
+    try {
+        await db.execute(`
+            ALTER TABLE boards ADD COLUMN external_source TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE boards ADD COLUMN external_id TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE boards ADD COLUMN sync_status TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE boards ADD COLUMN sync_error TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE boards ADD COLUMN last_synced_at TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE board_columns ADD COLUMN external_source TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE board_columns ADD COLUMN external_id TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE board_columns ADD COLUMN last_synced_at TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE tasks ADD COLUMN external_source TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE tasks ADD COLUMN external_id TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE tasks ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE tasks ADD COLUMN sync_error TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
+
+    try {
+        await db.execute(`
+            ALTER TABLE tasks ADD COLUMN last_synced_at TEXT DEFAULT NULL
+        `);
+    } catch (_) {}
 
     // Ensure `updated_at` exists on `projects` for older DBs
     try {

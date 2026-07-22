@@ -1,10 +1,10 @@
 /**
- * Migrations additives — Tasks API polish + Module 9 Notifications.
- * Appelé une fois au démarrage depuis src/index.ts.
+ * Migrations additives — Tasks API polish + Module 9 Notifications + M06 Audit.
  */
 
 import { db } from '../../db';
 import { runNotificationsMigration } from './notifications';
+import { runAuditMigration } from './audit';
 
 export async function runTasksMigrations() {
   await db.execute(`
@@ -34,15 +34,12 @@ export async function runTasksMigrations() {
     await db.execute(`ALTER TABLE tasks ADD COLUMN risk_score INTEGER DEFAULT NULL`);
   } catch {}
 
-  // Module 6 — KPI Engine (PRR: Proactive Recommendation Rate) — flags a task
-  // as proposed outside the initial scope, set at creation time.
   try {
     await db.execute(`ALTER TABLE tasks ADD COLUMN is_proactive INTEGER DEFAULT 0`);
   } catch {}
 
   console.log('✅ Tasks migrations applied');
 
-  // Module 1 — Authentication (AUTH-04 / "recover access")
   await db.execute(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,6 +52,6 @@ export async function runTasksMigrations() {
   `);
   console.log('✅ Password reset migrations applied');
 
-  // Module 9 — Notification System
   await runNotificationsMigration();
+  await runAuditMigration();
 }

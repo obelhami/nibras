@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../../db';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../../email';
 import { checkRateLimit, clientIpFromHeaders } from '../lib/rateLimit';
-
+import { logAuditEvent } from '../lib/audit';
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -414,6 +414,13 @@ export default new Elysia()
       args: [row.user_email],
     });
 
+    await logAuditEvent({
+      action: 'password_reset_done',
+      actorEmail: row.user_email,
+      targetType: 'user',
+      targetId: row.user_email,
+    });
+    
     return { message: 'Password reset successfully. Please log in with your new password.' };
   }, {
     body: t.Object({

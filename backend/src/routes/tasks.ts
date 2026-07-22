@@ -5,7 +5,7 @@ import { verifyAuthToken } from '../lib/jwt';
 import { validationError, notFound, forbidden, unauthorized, conflict, internalError } from '../lib/errors';
 import { parsePagination, buildPaginationMeta } from '../lib/pagination';
 import { normalizeText, isValidDateString } from '../lib/validation';
-
+import { logAuditEvent } from '../lib/audit';
 // Priorités valides — identiques à board.ts (Hamza) pour cohérence.
 const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 
@@ -517,7 +517,21 @@ export default new Elysia()
     const canDelete = isCreator || isOwner || isScopedManager || user.role === 'admin';
     if (!canDelete) return forbidden(set, 'You do not have permission to delete this task');
 
+    await db.execute({
+      sql: `INSERT INTO task_history (id, task_id, board_id, from_column_id, to_column_id, from_status_slug, to_status_slug, moved_by_email, note)
+            VALUES (?, ?, ?, ?, NULL, ?, 'deleted', ?, 'Task deleted')`,
+      args: [crypto.randomUUID(), task.id, params.boardId, task.column_id, task.status_slug, user.email],
+    });
+    
     await db.execute({ sql: 'DELETE FROM tasks WHERE id = ?', args: [task.id] });
-
+    
+    await logAuditEvent({
+      action: 'task_deleted',
+      actorEmail: user.email,
+      targetType: 'task',
+      targetId: task.id,
+      details: { title: task.title, boardId: params.boardId },
+    });
+    
     return { message: 'Task deleted successfully' };
   });

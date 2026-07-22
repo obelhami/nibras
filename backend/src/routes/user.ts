@@ -5,8 +5,12 @@ import { db } from '../../db';
 import { createAccessToken, createRefreshToken, createVerificationToken, verifyAuthToken } from '../lib/jwt';
 import { sendVerificationEmail } from '../../email';
 import { checkRateLimit, clientIpFromHeaders } from '../lib/rateLimit';
+import { logAuditEvent } from '../lib/audit';
+import { requirePermission } from '../lib/guard';
 
 const TESTING_MODE = process.env.TESTING_MODE === 'true';
+
+const SELF_ASSIGNABLE_ROLES = ['manager', 'developer'];
 
 export default new Elysia()
   .get('/profile', ({ headers, set }) => {
@@ -30,7 +34,6 @@ export default new Elysia()
     console.log("im here at register endpoint with email:", body.email);
     const { username, email, password, confirmPassword } = body;
 
-    // Module 1 — brute-force / spam protection: 5 signups / hour per IP.
     const ip = clientIpFromHeaders(headers as Record<string, string | undefined>);
     const rateLimit = checkRateLimit(`register:${ip}`, 5, 60 * 60_000);
     if (!rateLimit.allowed) {
@@ -98,6 +101,8 @@ export default new Elysia()
         args: [refreshToken, email, expiresAt.toISOString()],
       });
 
+      await logAuditEvent({ action: 'register', actorEmail: email, targetType: 'user', targetId: email });
+
       return {
         message: 'Registration successful',
         accessToken,
@@ -144,6 +149,33 @@ export default new Elysia()
     }),
   })
 
+  // ── GET /user/roles ────────────────────────────────────────────────────────
+  .get('/user/roles', async ({ headers, set }) => {
+    const payload = verifyAuthToken(headers.authorization);
+    if (!payload) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT role FROM users WHERE email = ?',
+      args: [payload.email],
+    });
+
+    const user = result.rows[0] as unknown as { role: string | null } | undefined;
+    if (!user) {
+      set.status = 404;
+      return { message: 'User not found' };
+    }
+
+    return {
+      current_role: user.role ?? null,
+      available_roles: SELF_ASSIGNABLE_ROLES,
+      note: 'Admin role can only be assigned by an existing Admin.',
+    };
+  })
+
+  // ── POST /user/role ────────────────────────────────────────────────────────
   .post('/user/role', async ({ body, headers, set }) => {
     const payload = verifyAuthToken(headers.authorization);
 
@@ -153,11 +185,10 @@ export default new Elysia()
     }
 
     const { role } = body;
-    const validRoles = ['admin', 'manager', 'developer'];
 
-    if (!validRoles.includes(role)) {
+    if (!SELF_ASSIGNABLE_ROLES.includes(role)) {
       set.status = 400;
-      return { message: 'Invalid role. Must be one of: admin, manager, developer' };
+      return { message: 'Invalid role. Must be one of: manager, developer. Admin role can only be assigned by an existing Admin.' };
     }
 
     const result = await db.execute({
@@ -165,7 +196,7 @@ export default new Elysia()
       args: [payload.email],
     });
 
-    const user = result.rows[0] as { id: number; role: string | null } | undefined;
+    const user = result.rows[0] as unknown as { id: number; role: string | null } | undefined;
 
     if (!user) {
       set.status = 404;
@@ -174,7 +205,7 @@ export default new Elysia()
 
     if (user.role) {
       set.status = 409;
-      return { message: 'Role already assigned' };
+      return { message: 'Role already assigned. Use PATCH /user/role to switch roles.' };
     }
 
     await db.execute({
@@ -192,6 +223,14 @@ export default new Elysia()
       args: [refreshToken, payload.email, expiresAt.toISOString()],
     });
 
+    await logAuditEvent({
+      action: 'role_assigned',
+      actorEmail: payload.email,
+      targetType: 'user',
+      targetId: payload.email,
+      details: { role, type: 'initial_assignment' },
+    });
+
     return {
       message: 'Role assigned successfully',
       role,
@@ -199,15 +238,90 @@ export default new Elysia()
       refreshToken,
     };
   }, {
-    body: t.Object({
-      role: t.String(),
-    }),
+    body: t.Object({ role: t.String() }),
+  })
+
+  // ── PATCH /user/role ───────────────────────────────────────────────────────
+  .patch('/user/role', async ({ body, headers, set }) => {
+    const payload = verifyAuthToken(headers.authorization);
+    if (!payload) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const { role } = body;
+
+    if (!SELF_ASSIGNABLE_ROLES.includes(role)) {
+      set.status = 400;
+      return { message: 'Invalid role. Must be one of: manager, developer. Admin role can only be assigned by an existing Admin.' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT id, role FROM users WHERE email = ?',
+      args: [payload.email],
+    });
+
+    const user = result.rows[0] as unknown as { id: number; role: string | null } | undefined;
+
+    if (!user) {
+      set.status = 404;
+      return { message: 'User not found' };
+    }
+
+    if (!user.role) {
+      set.status = 400;
+      return { message: 'No role assigned yet. Use POST /user/role to assign your initial role.' };
+    }
+
+    if (user.role === role) {
+      set.status = 409;
+      return { message: `You are already in ${role} mode.` };
+    }
+
+    if (user.role === 'admin') {
+      set.status = 403;
+      return { message: 'Admin role cannot be changed without Admin authorization.' };
+    }
+
+    const previousRole = user.role;
+
+    await db.execute({
+      sql: 'UPDATE users SET role = ? WHERE email = ?',
+      args: [role, payload.email],
+    });
+
+    const accessToken = createAccessToken({ username: payload.username, email: payload.email, role });
+    const refreshToken = createRefreshToken({ email: payload.email });
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    await db.execute({
+      sql: 'INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)',
+      args: [refreshToken, payload.email, expiresAt.toISOString()],
+    });
+
+    await logAuditEvent({
+      action: 'role_assigned',
+      actorEmail: payload.email,
+      targetType: 'user',
+      targetId: payload.email,
+      details: { from: previousRole, to: role, type: 'role_switch' },
+    });
+
+    return {
+      message: `Role switched from ${previousRole} to ${role} successfully.`,
+      previous_role: previousRole,
+      new_role: role,
+      accessToken,
+      refreshToken,
+    };
+  }, {
+    body: t.Object({ role: t.String() }),
   })
 
   .post('/login', async ({ body, headers, set }) => {
     const { email, password } = body;
 
-    // Module 1 — brute-force protection: 10 attempts / 15 min per IP+email.
     const ip = clientIpFromHeaders(headers as Record<string, string | undefined>);
     const rateLimit = checkRateLimit(`login:${ip}:${email}`, 10, 15 * 60_000);
     if (!rateLimit.allowed) {
@@ -222,7 +336,7 @@ export default new Elysia()
     });
 
     const user = result.rows[0] as {
-        id: string;
+      id: string;
       username: string;
       email: string;
       password: string;
@@ -251,8 +365,8 @@ export default new Elysia()
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role
-    });   
+      role: user.role,
+    });
     const refreshToken = createRefreshToken(user);
 
     const expiresAt = new Date();
@@ -260,6 +374,13 @@ export default new Elysia()
     await db.execute({
       sql: 'INSERT INTO refresh_tokens (token, email, expires_at) VALUES (?, ?, ?)',
       args: [refreshToken, user.email, expiresAt.toISOString()],
+    });
+
+    await logAuditEvent({
+      action: 'login',
+      actorEmail: user.email,
+      targetType: 'user',
+      targetId: user.email,
     });
 
     return {
@@ -278,10 +399,15 @@ export default new Elysia()
   .post('/logout', async ({ body, set }) => {
     const { refreshToken } = body;
 
-    // delete from database so it can never be used again
     await db.execute({
       sql: 'DELETE FROM refresh_tokens WHERE token = ?',
       args: [refreshToken],
+    });
+
+    await logAuditEvent({
+      action: 'logout',
+      actorEmail: 'unknown',
+      details: { note: 'logout via refresh token revocation' },
     });
 
     return { message: 'Logged out successfully' };
@@ -290,29 +416,27 @@ export default new Elysia()
   })
 
   .get('/me', async ({ headers, set }) => {
-  const payload = verifyAuthToken(headers.authorization);
+    const payload = verifyAuthToken(headers.authorization);
 
-  if (!payload) {
-    set.status = 401;
-    return { message: 'Unauthorized' };
-  }
+    if (!payload) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
 
-  const result = await db.execute({
-    sql: 'SELECT id, username, email, is_verified, role FROM users WHERE email = ?',
-    args: [payload.email],
-  });
+    const result = await db.execute({
+      sql: 'SELECT id, username, email, is_verified, role FROM users WHERE email = ?',
+      args: [payload.email],
+    });
 
-  const user = result.rows[0];
+    const user = result.rows[0];
 
-  if (!user) {
-    set.status = 404;
-    return { message: 'User not found' };
-  }
+    if (!user) {
+      set.status = 404;
+      return { message: 'User not found' };
+    }
 
-  return {
-    user,
-  };
-})
+    return { user };
+  })
 
   .patch('/profile', async ({ headers, body, set }) => {
     const payload = verifyAuthToken(headers.authorization);
@@ -348,12 +472,10 @@ export default new Elysia()
 
     if (typeof username === 'string') {
       const trimmedUsername = username.trim();
-
       if (!trimmedUsername) {
         set.status = 400;
         return { message: 'Username cannot be empty' };
       }
-
       nextUsername = trimmedUsername;
       updates.push('username = ?');
       values.push(trimmedUsername);
@@ -427,4 +549,73 @@ export default new Elysia()
       newPassword: t.Optional(t.String({ minLength: 6 })),
       confirmNewPassword: t.Optional(t.String()),
     }),
+  })
+
+  // ── GET /admin/users ───────────────────────────────────────────────────────
+  // Liste tous les utilisateurs — Admin uniquement.
+  .get('/admin/users', async ({ headers, set }) => {
+    const admin = await requirePermission(headers.authorization, 'manage_users', set);
+    if (!admin) return { message: 'Forbidden' };
+
+    const result = await db.execute(
+      `SELECT id, username, email, role, is_verified, created_at FROM users ORDER BY created_at DESC`
+    );
+
+    return { users: result.rows };
+  })
+
+  // ── PATCH /admin/users/:email/role ─────────────────────────────────────────
+  // Permet à un Admin d'attribuer n'importe quel rôle (y compris admin).
+  .patch('/admin/users/:email/role', async ({ headers, params, body, set }) => {
+    const admin = await requirePermission(headers.authorization, 'manage_users', set);
+    if (!admin) return { message: 'Forbidden' };
+
+    const { role } = body;
+    const ALL_ROLES = ['developer', 'manager', 'admin'];
+
+    if (!ALL_ROLES.includes(role)) {
+      set.status = 400;
+      return { message: 'Invalid role. Must be one of: developer, manager, admin.' };
+    }
+
+    if (params.email === admin.email && role !== 'admin') {
+      set.status = 403;
+      return { message: 'An Admin cannot change their own role.' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT id, email, role FROM users WHERE email = ?',
+      args: [params.email],
+    });
+
+    const target = result.rows[0] as unknown as { id: number; email: string; role: string | null } | undefined;
+
+    if (!target) {
+      set.status = 404;
+      return { message: 'User not found' };
+    }
+
+    const previousRole = target.role;
+
+    await db.execute({
+      sql: 'UPDATE users SET role = ? WHERE email = ?',
+      args: [role, params.email],
+    });
+
+    await logAuditEvent({
+      action: 'role_assigned',
+      actorEmail: admin.email,
+      targetType: 'user',
+      targetId: params.email,
+      details: { from: previousRole, to: role, type: 'admin_assignment' },
+    });
+
+    return {
+      message: `Role updated successfully for ${params.email}.`,
+      previous_role: previousRole,
+      new_role: role,
+    };
+  }, {
+    params: t.Object({ email: t.String() }),
+    body: t.Object({ role: t.String() }),
   });

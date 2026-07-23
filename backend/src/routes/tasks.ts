@@ -6,6 +6,7 @@ import { validationError, notFound, forbidden, unauthorized, conflict, internalE
 import { parsePagination, buildPaginationMeta } from '../lib/pagination';
 import { normalizeText, isValidDateString } from '../lib/validation';
 import { logAuditEvent } from '../lib/audit';
+import { clientIpFromHeaders } from '../lib/rateLimit';
 // Priorités valides — identiques à board.ts (Hamza) pour cohérence.
 const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 
@@ -531,6 +532,7 @@ export default new Elysia()
       targetType: 'task',
       targetId: task.id,
       details: { title: task.title, boardId: params.boardId },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
     
     return { message: 'Task deleted successfully' };

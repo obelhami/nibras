@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { db } from '../../db';
 import { normalizeText, slugifyColumnName } from '../routes/board/shared';
 import { recalculateBoardState } from '../routes/board/metrics';
+import { logAuditEvent } from './audit';
 
 const TRELLO_API_KEY = process.env.TRELLO_API_KEY ?? '';
 const TRELLO_API_SECRET = process.env.TRELLO_API_SECRET ?? '';
@@ -1012,6 +1013,14 @@ export async function completeTrelloOAuth(params: { oauthToken: string; verifier
 
     await db.execute({ sql: 'DELETE FROM trello_oauth_states WHERE state = ?', args: [params.state] });
 
+    await logAuditEvent({
+      action: 'trello_connected',
+      actorEmail: stateRow.user_email,
+      targetType: 'trello_connection',
+      targetId: row.id,
+      details: { teamId: stateRow.team_id, reconnected: true },
+    });
+
     return {
       connectionId: row.id,
       teamId: stateRow.team_id,
@@ -1037,6 +1046,14 @@ export async function completeTrelloOAuth(params: { oauthToken: string; verifier
   });
 
   await db.execute({ sql: 'DELETE FROM trello_oauth_states WHERE state = ?', args: [params.state] });
+
+  await logAuditEvent({
+    action: 'trello_connected',
+    actorEmail: stateRow.user_email,
+    targetType: 'trello_connection',
+    targetId: connectionId,
+    details: { teamId: stateRow.team_id, reconnected: false },
+  });
 
   return {
     connectionId,
@@ -1111,6 +1128,13 @@ export async function disconnectTrelloConnection(connectionId: string, userEmail
   await db.execute({
     sql: `DELETE FROM trello_sync_jobs WHERE connection_id = ?`,
     args: [connectionId],
+  });
+
+  await logAuditEvent({
+    action: 'trello_disconnected',
+    actorEmail: userEmail,
+    targetType: 'trello_connection',
+    targetId: connectionId,
   });
 }
 

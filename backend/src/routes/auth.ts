@@ -357,6 +357,14 @@ export default new Elysia()
       args: [token, user.email, expiresAt.toISOString()],
     });
 
+    await logAuditEvent({
+      action: 'password_reset_request',
+      actorEmail: user.email,
+      targetType: 'user',
+      targetId: user.email,
+      ipAddress: ip,
+    });
+
     try {
       await sendPasswordResetEmail(user.email, token, user.username);
     } catch (error) {
@@ -369,7 +377,7 @@ export default new Elysia()
     body: t.Object({ email: t.String({ format: 'email' }) }),
   })
 
-  .post('/auth/reset-password', async ({ body, set }) => {
+  .post('/auth/reset-password', async ({ body, headers, set }) => {
     const { token, newPassword } = body;
 
     if (!token || !newPassword) {
@@ -419,6 +427,7 @@ export default new Elysia()
       actorEmail: row.user_email,
       targetType: 'user',
       targetId: row.user_email,
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
     
     return { message: 'Password reset successfully. Please log in with your new password.' };

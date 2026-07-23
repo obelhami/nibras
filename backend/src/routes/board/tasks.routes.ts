@@ -2,6 +2,8 @@ import { Elysia, t } from 'elysia';
 import crypto from 'crypto';
 import { db } from '../../../db';
 import { hasPermission } from '../../lib/permissions';
+import { logAuditEvent } from '../../lib/audit';
+import { clientIpFromHeaders } from '../../lib/rateLimit';
 import { recalculateBoardState } from './metrics';
 import {
   PRIORITIES,
@@ -134,6 +136,15 @@ export default new Elysia()
       ],
     });
 
+    await logAuditEvent({
+      action: 'task_created',
+      actorEmail: user.email,
+      targetType: 'task',
+      targetId: taskId,
+      details: { title, boardId: params.boardId, priority },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     const snapshot = await recalculateBoardState(params.boardId);
 
     return {
@@ -194,6 +205,9 @@ export default new Elysia()
 
     const updates: string[] = [];
     const values: Array<string | number | null> = [];
+    // Module 6 — CDC: track field-level edits (title/priority/dueDate/complexity)
+    // that task_history previously only recorded for column moves.
+    const fieldChanges: string[] = [];
 
     if (typeof body.title === 'string') {
       const title = body.title.trim();
@@ -202,6 +216,7 @@ export default new Elysia()
         return { message: 'Task title cannot be empty' };
       }
 
+      if (title !== task.title) fieldChanges.push(`title: "${task.title}" -> "${title}"`);
       updates.push('title = ?');
       values.push(title);
     }
@@ -218,13 +233,16 @@ export default new Elysia()
         return { message: 'Priority must be low, medium, high, or urgent' };
       }
 
+      if (priority !== task.priority) fieldChanges.push(`priority: ${task.priority} -> ${priority}`);
       updates.push('priority = ?');
       values.push(priority);
     }
 
     if (typeof body.dueDate === 'string') {
+      const dueDate = body.dueDate.trim() || null;
+      if (dueDate !== task.due_date) fieldChanges.push(`dueDate: ${task.due_date ?? 'none'} -> ${dueDate ?? 'none'}`);
       updates.push('due_date = ?');
-      values.push(body.dueDate.trim() || null);
+      values.push(dueDate);
     }
 
     if (typeof body.complexity === 'number') {
@@ -233,6 +251,7 @@ export default new Elysia()
         return { message: 'Complexity must be between 1 and 5' };
       }
 
+      if (body.complexity !== task.complexity) fieldChanges.push(`complexity: ${task.complexity ?? 'none'} -> ${body.complexity}`);
       updates.push('complexity = ?');
       values.push(body.complexity);
     }
@@ -290,6 +309,25 @@ export default new Elysia()
       sql: `UPDATE tasks SET ${updates.join(', ')} WHERE id = ? AND board_id = ?`,
       args: [...values, params.taskId, params.boardId],
     });
+
+    if (fieldChanges.length > 0) {
+      await db.execute({
+        sql: `
+          INSERT INTO task_history (id, task_id, board_id, from_column_id, to_column_id, from_status_slug, to_status_slug, moved_by_email, note)
+          VALUES (?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+        `,
+        args: [crypto.randomUUID(), params.taskId, params.boardId, user.email, `Fields updated: ${fieldChanges.join('; ')}`],
+      });
+
+      await logAuditEvent({
+        action: 'task_updated',
+        actorEmail: user.email,
+        targetType: 'task',
+        targetId: params.taskId,
+        details: { boardId: params.boardId, changes: fieldChanges },
+        ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+      });
+    }
 
     const snapshot = await recalculateBoardState(params.boardId);
 
@@ -383,6 +421,19 @@ export default new Elysia()
         user.email,
         normalizeText(body.note) || null,
       ],
+    });
+
+    await logAuditEvent({
+      action: 'task_moved',
+      actorEmail: user.email,
+      targetType: 'task',
+      targetId: params.taskId,
+      details: {
+        boardId: params.boardId,
+        fromColumnId: sourceColumn?.id ?? task.column_id,
+        toColumnId: targetColumn.id,
+      },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     const snapshot = await recalculateBoardState(params.boardId);

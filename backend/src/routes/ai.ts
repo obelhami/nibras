@@ -23,6 +23,8 @@ import { db } from '../../db';
 import { verifyAuthToken } from '../lib/jwt';
 import { hasPermission } from '../lib/permissions';
 import { detectReviewSaturation, detectSilentOverload } from '../lib/behavior';
+import { logAuditEvent } from '../lib/audit';
+import { clientIpFromHeaders } from '../lib/rateLimit';
 import {
   computeTeamPulseForTeam,
   computeUserFocus,
@@ -408,6 +410,15 @@ export default new Elysia()
             SET status = ?, validated_by_email = ?, validated_at = ?
             WHERE id = ?`,
       args: [status, user.email, validatedAt, params.id],
+    });
+
+    await logAuditEvent({
+      action: status === 'accepted' ? 'ai_recommendation_validated' : 'ai_recommendation_dismissed',
+      actorEmail: user.email,
+      targetType: 'ai_insight',
+      targetId: params.id,
+      details: { insightType: insight.type, scope: insight.scope, scopeId: insight.scope_id },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return {

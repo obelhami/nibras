@@ -5,6 +5,8 @@ import { requirePermission } from '../lib/guard';
 import { permissionDenied, forbidden, notFound, validationError, conflict, internalError } from '../lib/errors';
 import { parsePagination, buildPaginationMeta } from '../lib/pagination';
 import { normalizeText, isValidDateString, isValidDateRange } from '../lib/validation';
+import { logAuditEvent } from '../lib/audit';
+import { clientIpFromHeaders } from '../lib/rateLimit';
 
 const ALLOWED_STATUSES = ['active', 'on_hold', 'completed', 'archived'];
 
@@ -136,6 +138,15 @@ export default new Elysia()
     });
 
     const created = await getProjectById(projectId);
+
+    await logAuditEvent({
+      action: 'project_created',
+      actorEmail: user.email,
+      targetType: 'project',
+      targetId: projectId,
+      details: { name, status },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
 
     return {
       message: 'Project created successfully',
@@ -298,6 +309,15 @@ export default new Elysia()
       args: [...args, params.projectId],
     });
 
+    await logAuditEvent({
+      action: 'project_updated',
+      actorEmail: user.email,
+      targetType: 'project',
+      targetId: params.projectId,
+      details: { fields: Object.keys(body) },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     const updated = await getProjectById(params.projectId);
 
     return {
@@ -332,6 +352,15 @@ export default new Elysia()
     } catch (error) {
       return internalError(set, 'Failed to delete project');
     }
+
+    await logAuditEvent({
+      action: 'project_deleted',
+      actorEmail: user.email,
+      targetType: 'project',
+      targetId: params.projectId,
+      details: { name: project.name },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
 
     return { message: 'Project deleted successfully' };
   })

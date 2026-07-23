@@ -1,6 +1,8 @@
 import { Elysia, t } from 'elysia';
 import crypto from 'crypto';
 import { db } from '../../../db';
+import { logAuditEvent } from '../../lib/audit';
+import { clientIpFromHeaders } from '../../lib/rateLimit';
 import { recalculateBoardState } from './metrics';
 import {
   type ColumnRow,
@@ -52,6 +54,15 @@ export default new Elysia()
     await db.execute({
       sql: 'INSERT INTO board_columns (id, board_id, name, slug, position) VALUES (?, ?, ?, ?, ?)',
       args: [columnId, params.boardId, name, slug, position],
+    });
+
+    await logAuditEvent({
+      action: 'column_created',
+      actorEmail: user.email,
+      targetType: 'column',
+      targetId: columnId,
+      details: { boardId: params.boardId, name },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     await recalculateBoardState(params.boardId);
@@ -128,6 +139,15 @@ export default new Elysia()
       args: [...values, params.columnId, params.boardId],
     });
 
+    await logAuditEvent({
+      action: 'column_updated',
+      actorEmail: user.email,
+      targetType: 'column',
+      targetId: params.columnId,
+      details: { boardId: params.boardId, fields: Object.keys(body) },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     await recalculateBoardState(params.boardId);
 
     return {
@@ -166,6 +186,15 @@ export default new Elysia()
     await db.execute({
       sql: 'DELETE FROM board_columns WHERE id = ? AND board_id = ?',
       args: [params.columnId, params.boardId],
+    });
+
+    await logAuditEvent({
+      action: 'column_deleted',
+      actorEmail: user.email,
+      targetType: 'column',
+      targetId: params.columnId,
+      details: { boardId: params.boardId },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     await recalculateBoardState(params.boardId);

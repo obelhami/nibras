@@ -101,7 +101,7 @@ export default new Elysia()
         args: [refreshToken, email, expiresAt.toISOString()],
       });
 
-      await logAuditEvent({ action: 'register', actorEmail: email, targetType: 'user', targetId: email });
+      await logAuditEvent({ action: 'register', actorEmail: email, targetType: 'user', targetId: email, ipAddress: ip });
 
       return {
         message: 'Registration successful',
@@ -229,6 +229,7 @@ export default new Elysia()
       targetType: 'user',
       targetId: payload.email,
       details: { role, type: 'initial_assignment' },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return {
@@ -306,6 +307,7 @@ export default new Elysia()
       targetType: 'user',
       targetId: payload.email,
       details: { from: previousRole, to: role, type: 'role_switch' },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return {
@@ -381,6 +383,7 @@ export default new Elysia()
       actorEmail: user.email,
       targetType: 'user',
       targetId: user.email,
+      ipAddress: ip,
     });
 
     return {
@@ -396,8 +399,14 @@ export default new Elysia()
     }),
   })
 
-  .post('/logout', async ({ body, set }) => {
+  .post('/logout', async ({ body, headers, set }) => {
     const { refreshToken } = body;
+
+    const tokenRow = await db.execute({
+      sql: 'SELECT email FROM refresh_tokens WHERE token = ?',
+      args: [refreshToken],
+    });
+    const ownerEmail = (tokenRow.rows[0] as { email: string } | undefined)?.email ?? 'unknown';
 
     await db.execute({
       sql: 'DELETE FROM refresh_tokens WHERE token = ?',
@@ -406,8 +415,9 @@ export default new Elysia()
 
     await logAuditEvent({
       action: 'logout',
-      actorEmail: 'unknown',
+      actorEmail: ownerEmail,
       details: { note: 'logout via refresh token revocation' },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return { message: 'Logged out successfully' };
@@ -608,6 +618,7 @@ export default new Elysia()
       targetType: 'user',
       targetId: params.email,
       details: { from: previousRole, to: role, type: 'admin_assignment' },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return {

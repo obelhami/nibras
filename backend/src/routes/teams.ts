@@ -5,6 +5,8 @@ import { verifyAuthToken } from '../lib/jwt';
 import { unauthorized, forbidden, notFound, validationError, conflict, internalError } from '../lib/errors';
 import { parsePagination, buildPaginationMeta } from '../lib/pagination';
 import { normalizeText } from '../lib/validation';
+import { logAuditEvent } from '../lib/audit';
+import { clientIpFromHeaders } from '../lib/rateLimit';
 
 type AuthUser = {
   id: number | string;
@@ -106,6 +108,15 @@ export default new Elysia()
     await db.execute({
       sql: 'INSERT INTO teams (id, name, manager_id) VALUES (?, ?, ?)',
       args: [teamId, name, managerId],
+    });
+
+    await logAuditEvent({
+      action: 'team_created',
+      actorEmail: user.email,
+      targetType: 'team',
+      targetId: teamId,
+      details: { name, managerId },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return {
@@ -222,6 +233,15 @@ export default new Elysia()
       args: [...args, params.teamId],
     });
 
+    await logAuditEvent({
+      action: 'team_updated',
+      actorEmail: user.email,
+      targetType: 'team',
+      targetId: params.teamId,
+      details: { fields: Object.keys(body) },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     const updated = await getTeamById(params.teamId);
     return { message: 'Team updated successfully', team: updated ? serializeTeam(updated) : null };
   }, {
@@ -245,6 +265,16 @@ export default new Elysia()
     }
 
     await db.execute({ sql: 'DELETE FROM teams WHERE id = ?', args: [params.teamId] });
+
+    await logAuditEvent({
+      action: 'team_deleted',
+      actorEmail: user.email,
+      targetType: 'team',
+      targetId: params.teamId,
+      details: { name: team.name },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     return { message: 'Team deleted successfully' };
   })
 
@@ -305,6 +335,15 @@ export default new Elysia()
       return internalError(set);
     }
 
+    await logAuditEvent({
+      action: 'team_member_added',
+      actorEmail: user.email,
+      targetType: 'team',
+      targetId: params.teamId,
+      details: { memberEmail: member.email },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     return { message: 'Member added successfully' };
   }, {
     body: t.Object({
@@ -332,6 +371,15 @@ export default new Elysia()
     await db.execute({
       sql: 'DELETE FROM team_members WHERE team_id = ? AND user_id = ?',
       args: [params.teamId, params.userId],
+    });
+
+    await logAuditEvent({
+      action: 'team_member_removed',
+      actorEmail: user.email,
+      targetType: 'team',
+      targetId: params.teamId,
+      details: { memberId: params.userId },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
     });
 
     return { message: 'Member removed successfully' };

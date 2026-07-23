@@ -2,6 +2,8 @@ import { Elysia, t } from 'elysia';
 import crypto from 'crypto';
 import { db } from '../../../db';
 import { hasPermission } from '../../lib/permissions';
+import { logAuditEvent } from '../../lib/audit';
+import { clientIpFromHeaders } from '../../lib/rateLimit';
 import { recalculateBoardState } from './metrics';
 import {
   DEFAULT_COLUMNS,
@@ -185,6 +187,15 @@ export default new Elysia()
       });
     }
 
+    await logAuditEvent({
+      action: 'board_created',
+      actorEmail: user.email,
+      targetType: 'board',
+      targetId: boardId,
+      details: { title, teamId, visibility },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     const snapshot = await recalculateBoardState(boardId);
 
     return {
@@ -344,6 +355,15 @@ export default new Elysia()
       args: [...values, params.boardId],
     });
 
+    await logAuditEvent({
+      action: 'board_updated',
+      actorEmail: user.email,
+      targetType: 'board',
+      targetId: params.boardId,
+      details: { fields: Object.keys(body) },
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
+
     const snapshot = await recalculateBoardState(params.boardId);
 
     return {
@@ -381,6 +401,14 @@ export default new Elysia()
     await db.execute({ sql: 'DELETE FROM tasks WHERE board_id = ?', args: [params.boardId] });
     await db.execute({ sql: 'DELETE FROM board_columns WHERE board_id = ?', args: [params.boardId] });
     await db.execute({ sql: 'DELETE FROM boards WHERE id = ?', args: [params.boardId] });
+
+    await logAuditEvent({
+      action: 'board_deleted',
+      actorEmail: user.email,
+      targetType: 'board',
+      targetId: params.boardId,
+      ipAddress: clientIpFromHeaders(headers as Record<string, string | undefined>),
+    });
 
     return { message: 'Board deleted successfully' };
   })

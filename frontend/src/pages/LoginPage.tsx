@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import nibrasLogo from "../assets/nibras-logo.png";
 import { fetchWithAuth, setAuthTokens } from "../lib/auth";
@@ -491,12 +491,12 @@ export default function LoginPage() {
                     >
                       Mot de passe
                     </label>
-                    <a
-                      href="#"
+                    <Link
+                      to="/forgot-password"
                       className="text-xs font-medium text-blue-600 hover:text-blue-700"
                     >
                       Mot de passe oubli&eacute; ?
-                    </a>
+                    </Link>
                   </div>
                   <input
                     id="password"

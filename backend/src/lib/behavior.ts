@@ -17,7 +17,8 @@ export type ContributionStyle =
   | 'silent_architect'
   | 'team_support'
   | 'debt_generator'
-  | 'critical_problem_solver';
+  | 'critical_problem_solver'
+  | 'system_protector';
 
 export type ContributionStyleResult = {
   style: ContributionStyle;
@@ -552,6 +553,16 @@ export async function analyzeContributionStyle(userId: string): Promise<Contribu
       features.urgentRatio * 0.2 +
       features.completionScore * 0.15 +
       features.speedScore * 0.1,
+    // System Protector (CDC §15): "keeps the system alive despite
+    // constraints and chaos" — stays consistent under pressure, handles
+    // complex/legacy work, fixes what's broken, and keeps the backlog from
+    // spiraling, without necessarily topping raw completion volume.
+    system_protector:
+      features.consistencyScore * 0.3 +
+      (1 - features.reopenedRatio) * 0.2 +
+      features.complexityScore * 0.2 +
+      features.fixRatio * 0.15 +
+      (1 - features.backlogRatio) * 0.15,
   };
 
   const { style, confidence } = calculateSoftMaxConfidence(scores);

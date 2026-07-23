@@ -36,10 +36,19 @@ async function getAuthenticatedUser(authorization: string | undefined): Promise<
   const payload = verifyAuthToken(authorization);
   if (!payload) return null;
 
-  const result = await db.execute({
-    sql: 'SELECT id, username, email, role FROM users WHERE id = ?',
-    args: [payload.userId ?? payload.email],
-  });
+  // Défensif : on ne contrôle pas l'émission des tokens (auth.ts / user.ts,
+  // hors de ce périmètre). Certains endpoints n'incluent pas toujours un
+  // `userId` numérique valide dans le token — donc on cherche par id s'il
+  // est présent, sinon par email (JAMAIS un email comparé à la colonne id).
+  const result = payload.userId
+    ? await db.execute({
+        sql: 'SELECT id, username, email, role FROM users WHERE id = ?',
+        args: [payload.userId],
+      })
+    : await db.execute({
+        sql: 'SELECT id, username, email, role FROM users WHERE email = ?',
+        args: [payload.email],
+      });
 
   const row = result.rows[0] as { id: number | string; username: string; email: string; role: string | null } | undefined;
   if (!row) return null;

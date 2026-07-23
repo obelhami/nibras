@@ -13,6 +13,8 @@ import trelloRoutes from './routes/trello';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
 import notificationRoutes from './routes/notifications';
+import kpiRoutes from './routes/kpi';
+import aiRoutes from './routes/ai';
 import { runTasksMigrations } from './lib/migrations';
 import { startTrelloSyncWorker } from './lib/trello';
 
@@ -71,6 +73,8 @@ const app = new Elysia()
   .use(userRoutes)
   .use(tokenRoutes)
   .use(notificationRoutes)
+  .use(kpiRoutes)
+  .use(aiRoutes)
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');

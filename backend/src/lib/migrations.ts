@@ -5,6 +5,7 @@
 import { db } from '../../db';
 import { runNotificationsMigration } from './notifications';
 import { runAuditMigration } from './audit';
+import { runAlMassarMigration } from './almassar';
 
 export async function runTasksMigrations() {
   await db.execute(`
@@ -54,4 +55,5 @@ export async function runTasksMigrations() {
 
   await runNotificationsMigration();
   await runAuditMigration();
+  await runAlMassarMigration();
 }

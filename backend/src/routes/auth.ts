@@ -4,9 +4,11 @@ import { createAccessToken, verifyAuthToken } from '../lib/jwt';
 import { getPermissions } from '../lib/permissions';
 import crypto from 'crypto';
 import jsonwebtoken from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { db } from '../../db';
-import { sendVerificationEmail } from '../../email';
-
+import { sendVerificationEmail, sendPasswordResetEmail } from '../../email';
+import { checkRateLimit, clientIpFromHeaders } from '../lib/rateLimit';
+import { logAuditEvent } from '../lib/audit';
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -311,4 +313,118 @@ export default new Elysia()
 
     set.status = 302;
     set.headers['location'] = `${FRONTEND_URL}/auth/callback?token=${accessToken}&redirect=/choose-role`;
+  })
+
+  // ── Module 1 — Password recovery (AUTH-04 "recover access") ──────────────
+  .post('/auth/forgot-password', async ({ body, headers, set }) => {
+    const email = (body.email ?? '').trim().toLowerCase();
+    if (!email) {
+      set.status = 400;
+      return { message: 'Email is required' };
+    }
+
+    // Brute-force / enumeration protection: 5 requests / hour per IP+email.
+    const ip = clientIpFromHeaders(headers as Record<string, string | undefined>);
+    const rateLimit = checkRateLimit(`forgot-password:${ip}:${email}`, 5, 60 * 60_000);
+    if (!rateLimit.allowed) {
+      set.status = 429;
+      set.headers['retry-after'] = String(rateLimit.retryAfterSeconds);
+      return { message: 'Too many requests. Please try again later.', code: 'RATE_LIMITED' };
+    }
+
+    const userResult = await db.execute({
+      sql: 'SELECT username, email FROM users WHERE email = ? AND is_verified = 1',
+      args: [email],
+    });
+    const user = userResult.rows[0] as { username: string; email: string } | undefined;
+
+    // Always return 200 regardless of whether the account exists, so the
+    // endpoint cannot be used to enumerate registered emails.
+    if (!user) {
+      return { message: 'If an account exists for this email, a reset link has been sent.' };
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+
+    await db.execute({
+      sql: 'DELETE FROM password_reset_tokens WHERE user_email = ?',
+      args: [user.email],
+    });
+    await db.execute({
+      sql: 'INSERT INTO password_reset_tokens (token, user_email, expires_at) VALUES (?, ?, ?)',
+      args: [token, user.email, expiresAt.toISOString()],
+    });
+
+    try {
+      await sendPasswordResetEmail(user.email, token, user.username);
+    } catch (error) {
+      console.error('Failed to send password reset email:', error);
+      // Do not leak provider errors to the client — still respond generically.
+    }
+
+    return { message: 'If an account exists for this email, a reset link has been sent.' };
+  }, {
+    body: t.Object({ email: t.String({ format: 'email' }) }),
+  })
+
+  .post('/auth/reset-password', async ({ body, set }) => {
+    const { token, newPassword } = body;
+
+    if (!token || !newPassword) {
+      set.status = 400;
+      return { message: 'Token and newPassword are required' };
+    }
+    if (newPassword.length < 8) {
+      set.status = 400;
+      return { message: 'Password must be at least 8 characters long' };
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT id, user_email, expires_at, used_at FROM password_reset_tokens WHERE token = ?',
+      args: [token],
+    });
+    const row = result.rows[0] as
+      | { id: number; user_email: string; expires_at: string; used_at: string | null }
+      | undefined;
+
+    if (!row || row.used_at) {
+      set.status = 400;
+      return { message: 'Invalid or already used reset link' };
+    }
+    if (new Date(row.expires_at) < new Date()) {
+      set.status = 400;
+      return { message: 'This reset link has expired' };
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await db.execute({
+      sql: 'UPDATE users SET password = ? WHERE email = ?',
+      args: [hashedPassword, row.user_email],
+    });
+    await db.execute({
+      sql: 'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?',
+      args: [row.id],
+    });
+    // Invalidate existing sessions so a stolen token can't keep a session alive.
+    await db.execute({
+      sql: 'DELETE FROM refresh_tokens WHERE email = ?',
+      args: [row.user_email],
+    });
+
+    await logAuditEvent({
+      action: 'password_reset_done',
+      actorEmail: row.user_email,
+      targetType: 'user',
+      targetId: row.user_email,
+    });
+    
+    return { message: 'Password reset successfully. Please log in with your new password.' };
+  }, {
+    body: t.Object({
+      token: t.String(),
+      newPassword: t.String(),
+    }),
   })

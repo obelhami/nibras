@@ -15,10 +15,11 @@ import tokenRoutes from './routes/token';
 import notificationRoutes from './routes/notifications';
 import kpiRoutes from './routes/kpi';
 import aiRoutes from './routes/ai';
+import kpiGlossaryRoutes from './routes/kpi-glossary';
+import auditRoutes from './routes/audit';
 import { runTasksMigrations } from './lib/migrations';
 import { startTrelloSyncWorker } from './lib/trello';
 
-// Tasks API polish migrations (task_assignees, task_comments, risk_score)
 runTasksMigrations().catch((err) => console.error('❌ Tasks migrations failed:', err));
 
 // NODE_ENV=test est défini par `bun test` — le worker n'a rien à faire dans la suite.
@@ -27,22 +28,29 @@ if (process.env.NODE_ENV !== 'test') {
   startTrelloSyncWorker();
 }
 
+// CORS — restreint aux origines connues via FRONTEND_URL env.
+// En dev sans FRONTEND_URL : accepte tout. En prod : mettre l'URL réelle.
+const allowedOrigins = (process.env.FRONTEND_URL ?? '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
 
 const app = new Elysia()
   .use(swagger({ path: '/docs' }))
   .use(cors({
-    origin: true,
+    origin: (request) => {
+      if (!process.env.FRONTEND_URL || process.env.TESTING_MODE === 'true') return true;
+      const origin = request.headers.get('origin') ?? '';
+      return allowedOrigins.includes(origin);
+    },
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   }))
   .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET ?? 'dev-secret' }))
-  // P1 - Unique error response format : uniformise les erreurs de validation
-  // Elysia/TypeBox (qui utilisent leur propre format interne) vers { message, code }.
   .onError(({ code, error, set }) => {
     if (code === 'VALIDATION') {
       set.status = 400;
-      // Extraire le message lisible depuis l'erreur TypeBox
       let message = 'Validation error';
       try {
         const parsed = JSON.parse((error as { message?: string }).message ?? '{}');
@@ -61,6 +69,15 @@ const app = new Elysia()
       return { message: 'Internal server error', code: 'INTERNAL_ERROR' };
     }
   })
+
+  // M08 — Health check
+  .get('/health', () => ({
+    status: 'ok',
+    service: 'nibras-backend',
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version ?? '1.0.0',
+  }))
+
   .get('/', () => 'Hello World')
   .get('/api/hello', () => ({ message: 'Hello from Elysia Backend' }))
   .use(authRoutes)
@@ -75,10 +92,12 @@ const app = new Elysia()
   .use(notificationRoutes)
   .use(kpiRoutes)
   .use(aiRoutes)
+  .use(kpiGlossaryRoutes)
+  .use(auditRoutes)
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');
-console.log("DB URL:", process.env.TURSO_DATABASE_URL);
+console.log('DB URL:', process.env.TURSO_DATABASE_URL);
 if (process.env.TESTING_MODE === 'true') {
   console.log('TESTING_MODE is ON — email verification is disabled');
 }

@@ -32,13 +32,16 @@ export default new Elysia()
         SELECT DISTINCT boards.*, projects.name AS linked_project_name
         FROM boards
         LEFT JOIN team_members ON team_members.team_id = boards.team_id AND team_members.user_id = ?
+        LEFT JOIN teams ON teams.id = boards.team_id
         LEFT JOIN projects ON projects.id = boards.linked_project
         WHERE boards.owner_email = ?
           OR boards.visibility = 'public'
           OR team_members.user_id IS NOT NULL
+          OR teams.manager_id = ?
+          OR ? = 'admin'
         ORDER BY boards.updated_at DESC, boards.created_at DESC
       `,
-      args: [user.id, user.email],
+      args: [user.id, user.email, user.id, user.role],
     });
 
     const boards = result.rows as unknown as BoardRow[];

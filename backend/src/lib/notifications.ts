@@ -54,10 +54,14 @@ export async function runNotificationsMigration() {
     )
   `);
 
-  await db.execute(`
-    CREATE INDEX IF NOT EXISTS idx_notifications_recipient
-    ON notifications(recipient_email, created_at DESC)
-  `);
+  try {
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_notifications_recipient
+      ON notifications(recipient_email, created_at DESC)
+    `);
+  } catch (e) {
+    // index déjà existant ou erreur Turso — on ignore
+  }
 
   console.log('✅ Notifications migration applied');
 }

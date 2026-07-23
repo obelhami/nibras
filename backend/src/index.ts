@@ -17,6 +17,7 @@ import kpiRoutes from './routes/kpi';
 import aiRoutes from './routes/ai';
 import kpiGlossaryRoutes from './routes/kpi-glossary';
 import auditRoutes from './routes/audit';
+import almassarRoutes from './routes/almassar';
 import { runTasksMigrations } from './lib/migrations';
 import { startTrelloSyncWorker } from './lib/trello';
 
@@ -94,6 +95,7 @@ const app = new Elysia()
   .use(aiRoutes)
   .use(kpiGlossaryRoutes)
   .use(auditRoutes)
+  .use(almassarRoutes)
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');

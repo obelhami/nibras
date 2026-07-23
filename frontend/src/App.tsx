@@ -10,6 +10,7 @@ import KpiPage from './pages/KpiPage'
 import KpiGlossaryPage from './pages/KpiGlossaryPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import TrelloConnectPage from './pages/TrelloConnectPage'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
       <Route path="/boards/:boardId" element={<BoardDetailPage />} />
       <Route path="/kpi" element={<KpiPage />} />
       <Route path="/kpi/glossary" element={<KpiGlossaryPage />} />
+      <Route path="/integrations/trello" element={<TrelloConnectPage />} />
     </Routes>
   )
 }

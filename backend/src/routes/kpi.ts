@@ -69,8 +69,9 @@ async function storeSnapshot(
 }
 
 // ---------- Aggregation Engine: fetch rows for a board ----------
+// (exported: reused by the AI Engine, routes/ai.ts)
 
-async function fetchBoardTasks(boardId: string): Promise<KpiTaskRow[]> {
+export async function fetchBoardTasks(boardId: string): Promise<KpiTaskRow[]> {
   const result = await db.execute({
     sql: `SELECT id, status_slug, due_date, complexity, assignee_email, created_at, updated_at
           FROM tasks WHERE board_id = ?`,
@@ -79,7 +80,7 @@ async function fetchBoardTasks(boardId: string): Promise<KpiTaskRow[]> {
   return result.rows as unknown as KpiTaskRow[];
 }
 
-async function fetchBoardHistory(boardId: string): Promise<KpiHistoryRow[]> {
+export async function fetchBoardHistory(boardId: string): Promise<KpiHistoryRow[]> {
   const result = await db.execute({
     sql: `
       SELECT
@@ -119,7 +120,7 @@ async function fetchBoardProactiveTasks(boardId: string): Promise<ProactiveTaskR
   return result.rows as unknown as ProactiveTaskRow[];
 }
 
-async function getBoard(boardId: string) {
+export async function getBoard(boardId: string) {
   const result = await db.execute({
     sql: 'SELECT id, owner_email, visibility, team_id FROM boards WHERE id = ?',
     args: [boardId],
@@ -147,7 +148,7 @@ async function isManagerOfTeam(teamId: string | null, userId: string): Promise<b
   return result.rows.length > 0;
 }
 
-async function canViewBoardKpis(
+export async function canViewBoardKpis(
   board: { owner_email: string; visibility: string; team_id: string | null },
   user: AuthUser,
 ): Promise<boolean> {
@@ -484,9 +485,9 @@ export default new Elysia()
     }),
   });
 
-// ---------- service helpers shared by the routes ----------
+// ---------- service helpers shared by the routes (and by the AI Engine) ----------
 
-async function computeUserFocus(email: string, days: number) {
+export async function computeUserFocus(email: string, days: number) {
   const since = sinceIso(days);
 
   const assignedResult = await db.execute({
@@ -518,7 +519,7 @@ async function computeUserFocus(email: string, days: number) {
   return computeFocusScore(email, assignedTasks, userMoves, reassignments);
 }
 
-async function computeTeamPulseForTeam(teamId: string, days: number) {
+export async function computeTeamPulseForTeam(teamId: string, days: number) {
   const since = sinceIso(days);
 
   // All boards owned by the team.

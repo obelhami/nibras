@@ -415,6 +415,27 @@ export async function detectSilentOverload(userId: string, thresholds = DEFAULT_
   score += activityPattern.unstable ? 0.15 : 0;
   score += normalizeRange(activityPattern.lateNightRatio, 0.15, 0.45) * 0.15;
 
+  console.log("========== REVIEW ANALYSIS ==========");
+
+for (const task of reviewTasks) {
+    const history = reviewEntryTimes.get(task.id);
+
+    console.log({
+        id: task.id,
+        title: task.title,
+        hasReviewHistory: !!history,
+        reviewEnteredAt: history?.created_at ?? null,
+        updatedAt: task.updated_at,
+        createdAt: task.created_at,
+        reviewAge: getTaskReviewAgeDays(task, reviewEntryTimes),
+        blocked:
+            getTaskReviewAgeDays(task, reviewEntryTimes) >
+            thresholds.reviewStallDays,
+    });
+}
+
+console.log("=====================================");
+
   const confidence = roundConfidence(score);
 
   if (confidence < 0.7) {
@@ -461,6 +482,7 @@ export async function detectReviewSaturation(projectId: string, thresholds = DEF
   score += normalizeRange(stuckReviewTasks.length, 1, Math.max(4, reviewTasks.length)) * 0.3;
   score += normalizeRange(averageWaitDays, thresholds.reviewStallDays, thresholds.reviewStallDays + 7) * 0.2;
   score += normalizeRange(workloadImbalance, thresholds.reviewImbalanceRatio, thresholds.reviewImbalanceRatio + 1.75) * 0.15;
+
 
   const confidence = roundConfidence(score);
 

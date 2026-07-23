@@ -9,13 +9,16 @@ import behaviorRoutes from './routes/behavior';
 import projectRoutes from './routes/project';
 import teamRoutes from './routes/teams';
 import taskRoutes from './routes/tasks';
+import trelloRoutes from './routes/trello';
 import userRoutes from './routes/user';
 import tokenRoutes from './routes/token';
 import notificationRoutes from './routes/notifications';
 import kpiRoutes from './routes/kpi';
 import kpiGlossaryRoutes from './routes/kpi-glossary';
 import auditRoutes from './routes/audit';
+import aiRoutes from './routes/ai';
 import { runTasksMigrations } from './lib/migrations';
+import { startTrelloSyncWorker } from './lib/trello';
 
 runTasksMigrations().catch((err) => console.error('❌ Tasks migrations failed:', err));
 
@@ -25,6 +28,11 @@ const allowedOrigins = (process.env.FRONTEND_URL ?? '')
   .split(',')
   .map(o => o.trim())
   .filter(Boolean);
+// NODE_ENV=test est défini par `bun test` — le worker n'a rien à faire dans la suite.
+// (TESTING_MODE=true reste le mode dev normal : il ne doit pas couper le worker.)
+if (process.env.NODE_ENV !== 'test') {
+  startTrelloSyncWorker();
+}
 
 const app = new Elysia()
   .use(swagger({ path: '/docs' }))
@@ -77,12 +85,14 @@ const app = new Elysia()
   .use(projectRoutes)
   .use(teamRoutes)
   .use(taskRoutes)
+  .use(trelloRoutes)
   .use(userRoutes)
   .use(tokenRoutes)
   .use(notificationRoutes)
   .use(kpiRoutes)
   .use(kpiGlossaryRoutes)
   .use(auditRoutes)
+  .use(aiRoutes)
   .listen(3000);
 
 console.log('Elysia server is running on http://localhost:3000');

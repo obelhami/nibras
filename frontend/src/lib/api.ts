@@ -107,8 +107,7 @@ export interface TrelloConnectionStatus {
   id: string
   user_email: string
   team_id: string
-  access_token: string | null
-  token_secret: string | null
+  hasCredentials: boolean
   trello_member_id: string | null
   trello_member_name: string | null
   status: string

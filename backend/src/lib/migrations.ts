@@ -6,6 +6,7 @@ import { db } from '../../db';
 import { runNotificationsMigration } from './notifications';
 import { runAuditMigration } from './audit';
 import { runAlMassarMigration } from './almassar';
+import { runBehaviorMigration } from './behavior';
 
 export async function runTasksMigrations() {
   await db.execute(`
@@ -56,4 +57,5 @@ export async function runTasksMigrations() {
   await runNotificationsMigration();
   await runAuditMigration();
   await runAlMassarMigration();
+  await runBehaviorMigration();
 }

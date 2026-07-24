@@ -1,4 +1,5 @@
 import { db } from '../../db';
+import crypto from 'crypto';
 
 export type SilentOverloadResult = {
   signal?: 'silent_overload';
@@ -415,27 +416,6 @@ export async function detectSilentOverload(userId: string, thresholds = DEFAULT_
   score += activityPattern.unstable ? 0.15 : 0;
   score += normalizeRange(activityPattern.lateNightRatio, 0.15, 0.45) * 0.15;
 
-  console.log("========== REVIEW ANALYSIS ==========");
-
-for (const task of reviewTasks) {
-    const history = reviewEntryTimes.get(task.id);
-
-    console.log({
-        id: task.id,
-        title: task.title,
-        hasReviewHistory: !!history,
-        reviewEnteredAt: history?.created_at ?? null,
-        updatedAt: task.updated_at,
-        createdAt: task.created_at,
-        reviewAge: getTaskReviewAgeDays(task, reviewEntryTimes),
-        blocked:
-            getTaskReviewAgeDays(task, reviewEntryTimes) >
-            thresholds.reviewStallDays,
-    });
-}
-
-console.log("=====================================");
-
   const confidence = roundConfidence(score);
 
   if (confidence < 0.7) {
@@ -571,4 +551,60 @@ export async function analyzeContributionStyle(userId: string): Promise<Contribu
     style,
     confidence: roundConfidence(confidence),
   };
+}
+
+// ---------- Persistence — Behavioral Layer signals were previously always ----------
+// ---------- recomputed live and never stored; this makes trends possible. --------
+
+export type BehavioralSignalType = 'silent_overload' | 'review_saturation' | 'contribution_style';
+
+export async function runBehaviorMigration() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS behavioral_signals (
+      id            TEXT PRIMARY KEY,
+      scope         TEXT NOT NULL,   -- 'user' | 'project'
+      scope_id      TEXT NOT NULL,   -- user id or project id
+      signal_type   TEXT NOT NULL,   -- 'silent_overload' | 'review_saturation' | 'contribution_style'
+      payload       TEXT NOT NULL,   -- JSON result (signal/style + confidence)
+      generated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_behavioral_signals_scope ON behavioral_signals(scope, scope_id, generated_at DESC)`,
+    );
+  } catch {
+    // index already exists
+  }
+
+  console.log('✅ Behavioral Layer migration applied');
+}
+
+export async function storeBehavioralSnapshot(
+  scope: 'user' | 'project',
+  scopeId: string,
+  signalType: BehavioralSignalType,
+  payload: unknown,
+) {
+  await db.execute({
+    sql: `INSERT INTO behavioral_signals (id, scope, scope_id, signal_type, payload)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [crypto.randomUUID(), scope, scopeId, signalType, JSON.stringify(payload)],
+  });
+}
+
+export async function getBehavioralSnapshots(scope: 'user' | 'project', scopeId: string, limit: number) {
+  const result = await db.execute({
+    sql: `SELECT id, scope, scope_id, signal_type, payload, generated_at
+          FROM behavioral_signals
+          WHERE scope = ? AND scope_id = ?
+          ORDER BY generated_at DESC
+          LIMIT ?`,
+    args: [scope, scopeId, limit],
+  });
+
+  return (result.rows as unknown as Array<{
+    id: string; scope: string; scope_id: string; signal_type: string; payload: string; generated_at: string;
+  }>).map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
 }

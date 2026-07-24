@@ -3,6 +3,8 @@ import {
   analyzeContributionStyle,
   detectReviewSaturation,
   detectSilentOverload,
+  getBehavioralSnapshots,
+  storeBehavioralSnapshot,
 } from '../lib/behavior';
 import { getCurrentUser } from './board/shared';
 import { hasPermission } from '../lib/permissions';
@@ -31,7 +33,9 @@ export default new Elysia()
       return { message: 'You do not have permission to view this signal' };
     }
 
-    return detectSilentOverload(body.userId);
+    const result = await detectSilentOverload(body.userId);
+    await storeBehavioralSnapshot('user', body.userId, 'silent_overload', result);
+    return result;
   }, {
     body: t.Object({
       userId: t.String(),
@@ -52,7 +56,9 @@ export default new Elysia()
       return { message: 'You do not have permission to view this signal' };
     }
 
-    return detectReviewSaturation(body.projectId);
+    const result = await detectReviewSaturation(body.projectId);
+    await storeBehavioralSnapshot('project', body.projectId, 'review_saturation', result);
+    return result;
   }, {
     body: t.Object({
       projectId: t.String(),
@@ -71,9 +77,37 @@ export default new Elysia()
       return { message: 'You do not have permission to view this signal' };
     }
 
-    return analyzeContributionStyle(body.userId);
+    const result = await analyzeContributionStyle(body.userId);
+    await storeBehavioralSnapshot('user', body.userId, 'contribution_style', result);
+    return result;
   }, {
     body: t.Object({
       userId: t.String(),
+    }),
+  })
+
+  // Stored snapshot history (trend charts) — same shape/scoping as /kpi/snapshots.
+  .get('/behavior/signals/history', async ({ headers, query, set }) => {
+    const user = await getCurrentUser(headers.authorization);
+    if (!user) {
+      set.status = 401;
+      return { message: 'Unauthorized' };
+    }
+
+    const isSelf = query.scope === 'user' && query.scopeId === user.id;
+    if (!isSelf && !hasPermission(user.role, 'view_behavioral_signals')) {
+      set.status = 403;
+      return { message: 'You do not have permission to view this signal history' };
+    }
+
+    const limit = Number(query.limit) > 0 ? Math.min(Number(query.limit), 200) : 50;
+    const snapshots = await getBehavioralSnapshots(query.scope as 'user' | 'project', query.scopeId, limit);
+
+    return { snapshots };
+  }, {
+    query: t.Object({
+      scope: t.Union([t.Literal('user'), t.Literal('project')]),
+      scopeId: t.String(),
+      limit: t.Optional(t.String()),
     }),
   });

@@ -3,6 +3,7 @@ import { db } from '../../db';
 import { normalizeText, slugifyColumnName } from '../routes/board/shared';
 import { recalculateBoardState } from '../routes/board/metrics';
 import { logAuditEvent } from './audit';
+import { encryptSecret, decryptSecret } from './crypto';
 
 const TRELLO_API_KEY = process.env.TRELLO_API_KEY ?? '';
 const TRELLO_API_SECRET = process.env.TRELLO_API_SECRET ?? '';
@@ -104,7 +105,13 @@ type TrelloUserRow = {
 };
 
 export type TrelloIntegrationStatus = {
-  connections: Array<TrelloConnectionRow & { pendingJobs: number; failedJobs: number }>;
+  connections: Array<
+    Omit<TrelloConnectionRow, 'access_token' | 'token_secret'> & {
+      hasCredentials: boolean;
+      pendingJobs: number;
+      failedJobs: number;
+    }
+  >;
   jobs: TrelloSyncJobRow[];
 };
 
@@ -112,12 +119,12 @@ function isConfigured() {
   return Boolean(TRELLO_API_KEY && TRELLO_API_SECRET);
 }
 
-function oauthEncode(value: string) {
+export function oauthEncode(value: string) {
   return encodeURIComponent(value)
     .replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
-function normalizedUrl(rawUrl: string) {
+export function normalizedUrl(rawUrl: string) {
   const url = new URL(rawUrl);
   const port = url.port && !((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80'))
     ? `:${url.port}`
@@ -125,7 +132,7 @@ function normalizedUrl(rawUrl: string) {
   return `${url.protocol}//${url.hostname}${port}${url.pathname}`;
 }
 
-function collectOAuthParams(url: string, params: Record<string, string>) {
+export function collectOAuthParams(url: string, params: Record<string, string>) {
   const fullUrl = new URL(url);
   const collected: Record<string, string> = {};
 
@@ -140,7 +147,7 @@ function collectOAuthParams(url: string, params: Record<string, string>) {
   return collected;
 }
 
-function buildNormalizedParamString(params: Record<string, string>) {
+export function buildNormalizedParamString(params: Record<string, string>) {
   return Object.entries(params)
     .map(([key, value]) => [oauthEncode(key), oauthEncode(value)] as const)
     .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
@@ -154,7 +161,7 @@ function buildNormalizedParamString(params: Record<string, string>) {
     .join('&');
 }
 
-function buildOAuthSignature(
+export function buildOAuthSignature(
   method: string,
   url: string,
   params: Record<string, string>,
@@ -174,7 +181,7 @@ function buildOAuthSignature(
     .digest('base64');
 }
 
-function buildOAuthHeader(params: Record<string, string>) {
+export function buildOAuthHeader(params: Record<string, string>) {
   return `OAuth ${Object.entries(params)
     .filter(([key]) => key.startsWith('oauth_'))
     .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
@@ -835,7 +842,12 @@ async function processJob(job: TrelloSyncJobRow) {
 
   try {
     if (job.job_type === 'sync_connection') {
-      await syncConnection(connection);
+      const decryptedConnection: TrelloConnectionRow = {
+        ...connection,
+        access_token: connection.access_token ? decryptSecret(connection.access_token) : null,
+        token_secret: connection.token_secret ? decryptSecret(connection.token_secret) : null,
+      };
+      await syncConnection(decryptedConnection);
       await updateJobSuccess(job.id);
       return;
     }
@@ -1003,8 +1015,8 @@ export async function completeTrelloOAuth(params: { oauthToken: string; verifier
         WHERE id = ?
       `,
       args: [
-        accessToken.oauthToken,
-        accessToken.oauthTokenSecret,
+        encryptSecret(accessToken.oauthToken),
+        encryptSecret(accessToken.oauthTokenSecret),
         accessToken.memberId,
         normalizeText(member.fullName) || normalizeText(member.username) || 'Trello member',
         row.id,
@@ -1038,8 +1050,8 @@ export async function completeTrelloOAuth(params: { oauthToken: string; verifier
       connectionId,
       stateRow.user_email,
       stateRow.team_id,
-      accessToken.oauthToken,
-      accessToken.oauthTokenSecret,
+      encryptSecret(accessToken.oauthToken),
+      encryptSecret(accessToken.oauthTokenSecret),
       accessToken.memberId,
       normalizeText(member.fullName) || normalizeText(member.username) || 'Trello member',
     ],
@@ -1099,11 +1111,17 @@ export async function getTrelloStatus(userEmail: string) {
     args: [userEmail],
   });
 
-  const connections = (connectionsResult.rows as unknown as TrelloConnectionRow[]).map((connection) => ({
-    ...connection,
-    pendingJobs: 0,
-    failedJobs: 0,
-  }));
+  const connections = (connectionsResult.rows as unknown as TrelloConnectionRow[]).map((connection) => {
+    // Never return the encrypted tokens to the client — the caller only
+    // needs to know a connection has live credentials, not the ciphertext.
+    const { access_token, token_secret, ...rest } = connection;
+    return {
+      ...rest,
+      hasCredentials: Boolean(access_token && token_secret),
+      pendingJobs: 0,
+      failedJobs: 0,
+    };
+  });
 
   const jobs = jobsResult.rows as unknown as TrelloSyncJobRow[];
 
